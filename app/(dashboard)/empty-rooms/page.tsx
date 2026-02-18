@@ -5,9 +5,11 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { format } from 'date-fns'
+import { ko } from 'date-fns/locale'
 
 export default function EmptyRoomsPage() {
-  const [date, setDate] = useState('')
+  const [date, setDate] = useState(format(new Date(), 'yyyy-MM-dd'))
   const [startTime, setStartTime] = useState('09:00')
   const [endTime, setEndTime] = useState('18:00')
   const [result, setResult] = useState<any>(null)
@@ -23,14 +25,19 @@ export default function EmptyRoomsPage() {
       const response = await fetch('/api/empty-rooms', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ date, startTime, endTime }),
+        body: JSON.stringify({
+          date,
+          startTime,
+          endTime
+        }),
       })
 
       if (response.ok) {
         const data = await response.json()
         setResult(data)
       } else {
-        setError('빈 강의장 조회에 실패했습니다')
+        const errorData = await response.json()
+        setError(errorData.error || '빈 강의장 조회에 실패했습니다')
       }
     } catch (err) {
       setError('빈 강의장 조회 중 오류가 발생했습니다')
@@ -99,12 +106,35 @@ export default function EmptyRoomsPage() {
 
       {result && (
         <>
+          {/* 검색 정보 */}
+          <Card className="bg-blue-50 border-blue-200">
+            <CardContent className="pt-6">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm text-muted-foreground">검색 조건</p>
+                  <p className="text-lg font-semibold">
+                    {result.date} ({format(new Date(result.date + 'T00:00:00'), 'EEEE', { locale: ko })})
+                  </p>
+                  <p className="text-sm text-muted-foreground mt-1">
+                    시간: {result.startTime} ~ {result.endTime}
+                  </p>
+                </div>
+                <div className="text-right">
+                  <p className="text-sm text-muted-foreground">빈 강의장</p>
+                  <p className="text-3xl font-bold text-green-600">
+                    {result.emptyRooms.length}개
+                  </p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
           {/* 빈 강의장 */}
           <Card>
             <CardHeader>
               <CardTitle>빈 강의장</CardTitle>
               <CardDescription>
-                {result.date} {result.startTime} ~ {result.endTime}
+                해당 시간에 사용 가능한 강의장
               </CardDescription>
             </CardHeader>
             <CardContent>
@@ -117,10 +147,10 @@ export default function EmptyRoomsPage() {
                   {result.emptyRooms.map((room: string) => (
                     <div
                       key={room}
-                      className="p-6 border rounded-lg text-center bg-green-50 border-green-200"
+                      className="p-6 border-2 rounded-lg text-center bg-green-50 border-green-300 hover:bg-green-100 transition-colors"
                     >
-                      <p className="text-2xl font-bold text-green-700">{room}</p>
-                      <p className="text-sm text-green-600 mt-1">사용 가능</p>
+                      <p className="text-3xl font-bold text-green-700">{room}</p>
+                      <p className="text-sm text-green-600 mt-2">사용 가능</p>
                     </div>
                   ))}
                 </div>
@@ -133,7 +163,7 @@ export default function EmptyRoomsPage() {
             <CardHeader>
               <CardTitle>사용 중인 강의장</CardTitle>
               <CardDescription>
-                {result.date} {result.startTime} ~ {result.endTime}
+                해당 시간에 예약되어 있는 강의장
               </CardDescription>
             </CardHeader>
             <CardContent>
@@ -146,10 +176,10 @@ export default function EmptyRoomsPage() {
                   {result.occupiedRooms.map((room: string) => (
                     <div
                       key={room}
-                      className="p-6 border rounded-lg text-center bg-red-50 border-red-200"
+                      className="p-6 border-2 rounded-lg text-center bg-red-50 border-red-300"
                     >
-                      <p className="text-2xl font-bold text-red-700">{room}</p>
-                      <p className="text-sm text-red-600 mt-1">사용 중</p>
+                      <p className="text-3xl font-bold text-red-700">{room}</p>
+                      <p className="text-sm text-red-600 mt-2">사용 중</p>
                     </div>
                   ))}
                 </div>

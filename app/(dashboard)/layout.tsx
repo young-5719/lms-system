@@ -38,6 +38,12 @@ export default async function DashboardLayout({
                   과정 관리
                 </Link>
                 <Link
+                  href="/schedule"
+                  className="inline-flex items-center px-1 pt-1 text-sm font-medium text-gray-500 hover:text-gray-900 border-b-2 border-transparent hover:border-gray-300"
+                >
+                  강의장 현황
+                </Link>
+                <Link
                   href="/empty-rooms"
                   className="inline-flex items-center px-1 pt-1 text-sm font-medium text-gray-500 hover:text-gray-900 border-b-2 border-transparent hover:border-gray-300"
                 >
