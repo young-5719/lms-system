@@ -1,0 +1,97 @@
+// Prisma schema for LMS (학사 관리 시스템)
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// Enum 타입 정의
+enum CourseType {
+  GENERAL        // 일반
+  EMPLOYED       // 재직자
+  UNEMPLOYED     // 실업자
+  NATIONAL       // 국기
+  ASSESSMENT     // 과평
+  KDT            // KDT
+  INDUSTRY       // 산대특
+}
+
+enum DayType {
+  WEEKDAY        // 평일
+  WEEKEND        // 주말
+}
+
+// 과정 테이블
+model Course {
+  id                     Int         @id @default(autoincrement())
+
+  // 기본 정보
+  trainingId             Int         @unique @map("training_id")
+  courseName             String      @map("course_name")
+  courseCodeId           String      @map("course_code_id")
+  ncsCode                String?     @map("ncs_code")
+  round                  Int?
+  category               String?     @db.VarChar(100)
+  type                   CourseType  @default(GENERAL)
+  subCategory            String?     @map("sub_category") @db.VarChar(100)
+  detailCategory         String?     @map("detail_category") @db.VarChar(100)
+  strategicField         String?     @map("strategic_field") @db.VarChar(100)
+
+  // 일정 및 장소
+  isWeekend              DayType     @default(WEEKDAY) @map("is_weekend")
+  roomNumber             String      @map("room_number") @db.VarChar(20)
+  startDate              DateTime    @map("start_date") @db.Date
+  endDate                DateTime    @map("end_date") @db.Date
+  dayOfWeek              String?     @map("day_of_week") @db.VarChar(50)
+  trainingDays           Int?        @map("training_days")
+  lectureDays            String?     @map("lecture_days") @db.Text
+  holidays               String?     @db.Text
+
+  // 시간 정보
+  startTime              String      @map("start_time") @db.VarChar(10)
+  endTime                String      @map("end_time") @db.VarChar(10)
+  dailyHours             Float?      @map("daily_hours")
+  totalHours             Float?      @map("total_hours")
+  lunchStart             String?     @map("lunch_start") @db.VarChar(10)
+  lunchEnd               String?     @map("lunch_end") @db.VarChar(10)
+
+  // 인원 및 비용
+  instructor             String?     @db.VarChar(100)
+  employmentManager      String?     @map("employment_manager") @db.VarChar(100)
+  capacity               Int?
+  tuition                Int?
+  currentStudentsGov     Int?        @map("current_students_gov")
+  currentStudentsGen     Int?        @map("current_students_gen")
+  recruitmentRate        Float?      @map("recruitment_rate")
+  dropouts               Int?        @default(0)
+  completionCount        Int?        @map("completion_count")
+  completionRate         Float?      @map("completion_rate")
+
+  // 특강 및 행사
+  specialLecture1        String?     @map("special_lecture_1") @db.VarChar(200)
+  specialLecture1Time    Float?      @map("special_lecture_1_time")
+  specialLecture2        String?     @map("special_lecture_2") @db.VarChar(200)
+  specialLecture2Time    Float?      @map("special_lecture_2_time")
+  presentationDate       DateTime?   @map("presentation_date") @db.Date
+  presentationTime       Float?      @map("presentation_time")
+
+  // 운영 변동 사항
+  changeStartDate        DateTime?   @map("change_start_date") @db.Date
+  changedRoom            String?     @map("changed_room") @db.VarChar(20)
+  scheduleChange         String?     @map("schedule_change") @db.Text
+  operationNote          String?     @map("operation_note") @db.Text
+
+  // 타임스탬프
+  createdAt              DateTime    @default(now()) @map("created_at")
+  updatedAt              DateTime    @updatedAt @map("updated_at")
+
+  @@index([roomNumber])
+  @@index([startDate, endDate])
+  @@index([type])
+  @@index([trainingId])
+  @@map("courses")
+}
