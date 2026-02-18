@@ -1,5 +1,5 @@
 import Link from 'next/link'
-import { prisma } from '@/lib/prisma'
+import { createClient } from '@/lib/supabase/server'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import {
@@ -14,9 +14,11 @@ import { format } from 'date-fns'
 import DeleteCourseButton from '@/components/courses/DeleteCourseButton'
 
 export default async function CoursesPage() {
-  const courses = await prisma.course.findMany({
-    orderBy: { createdAt: 'desc' },
-  })
+  const supabase = await createClient()
+  const { data: courses } = await supabase
+    .from('courses')
+    .select('*')
+    .order('created_at', { ascending: false })
 
   return (
     <div className="space-y-6">
@@ -34,7 +36,7 @@ export default async function CoursesPage() {
         <CardHeader>
           <CardTitle>과정 목록</CardTitle>
           <CardDescription>
-            총 {courses.length}개의 과정이 등록되어 있습니다
+            총 {courses ? courses.length : 0}개의 과정이 등록되어 있습니다
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -53,7 +55,7 @@ export default async function CoursesPage() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {courses.length === 0 ? (
+                {!courses || courses.length === 0 ? (
                   <TableRow>
                     <TableCell colSpan={8} className="h-24 text-center">
                       등록된 과정이 없습니다
@@ -62,15 +64,15 @@ export default async function CoursesPage() {
                 ) : (
                   courses.map((course) => (
                     <TableRow key={course.id}>
-                      <TableCell className="font-medium">{course.trainingId}</TableCell>
-                      <TableCell>{course.courseName}</TableCell>
-                      <TableCell>{course.roomNumber}</TableCell>
+                      <TableCell className="font-medium">{course.training_id}</TableCell>
+                      <TableCell>{course.course_name}</TableCell>
+                      <TableCell>{course.room_number}</TableCell>
                       <TableCell>{course.type}</TableCell>
                       <TableCell>{course.instructor || '-'}</TableCell>
                       <TableCell>
-                        {format(new Date(course.startDate), 'yyyy-MM-dd')} ~ {format(new Date(course.endDate), 'yyyy-MM-dd')}
+                        {format(new Date(course.start_date), 'yyyy-MM-dd')} ~ {format(new Date(course.end_date), 'yyyy-MM-dd')}
                       </TableCell>
-                      <TableCell>{course.recruitmentRate ? `${course.recruitmentRate}%` : '-'}</TableCell>
+                      <TableCell>{course.recruitment_rate ? `${course.recruitment_rate}%` : '-'}</TableCell>
                       <TableCell className="text-right space-x-2">
                         <Link href={`/courses/${course.id}`}>
                           <Button variant="outline" size="sm">

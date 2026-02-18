@@ -1,4 +1,4 @@
-import { prisma } from '@/lib/prisma'
+import { createClient } from '@/lib/supabase/server'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import {
   Table,
@@ -10,20 +10,12 @@ import {
 } from '@/components/ui/table'
 
 export default async function StatisticsPage() {
+  const supabase = await createClient()
+
   // 전체 과정 조회
-  const courses = await prisma.course.findMany({
-    select: {
-      courseName: true,
-      type: true,
-      capacity: true,
-      currentStudentsGov: true,
-      currentStudentsGen: true,
-      recruitmentRate: true,
-      completionCount: true,
-      completionRate: true,
-      dropouts: true,
-    },
-  })
+  const { data: courses } = await supabase
+    .from('courses')
+    .select('course_name, type, capacity, current_students_gov, current_students_gen, recruitment_rate, completion_count, completion_rate, dropouts')
 
   // 구분별 통계 계산
   const statsByType: Record<string, any> = {}
@@ -38,34 +30,36 @@ export default async function StatisticsPage() {
     INDUSTRY: '산대특',
   }
 
-  courses.forEach((course) => {
-    const type = course.type
-    if (!statsByType[type]) {
-      statsByType[type] = {
-        count: 0,
-        totalCapacity: 0,
-        totalStudents: 0,
-        totalRecruitmentRate: 0,
-        totalCompletionRate: 0,
-        recruitmentRateCount: 0,
-        completionRateCount: 0,
+  if (courses) {
+    courses.forEach((course) => {
+      const type = course.type
+      if (!statsByType[type]) {
+        statsByType[type] = {
+          count: 0,
+          totalCapacity: 0,
+          totalStudents: 0,
+          totalRecruitmentRate: 0,
+          totalCompletionRate: 0,
+          recruitmentRateCount: 0,
+          completionRateCount: 0,
+        }
       }
-    }
 
-    statsByType[type].count++
-    statsByType[type].totalCapacity += course.capacity || 0
-    statsByType[type].totalStudents += (course.currentStudentsGov || 0) + (course.currentStudentsGen || 0)
+      statsByType[type].count++
+      statsByType[type].totalCapacity += course.capacity || 0
+      statsByType[type].totalStudents += (course.current_students_gov || 0) + (course.current_students_gen || 0)
 
-    if (course.recruitmentRate) {
-      statsByType[type].totalRecruitmentRate += course.recruitmentRate
-      statsByType[type].recruitmentRateCount++
-    }
+      if (course.recruitment_rate) {
+        statsByType[type].totalRecruitmentRate += course.recruitment_rate
+        statsByType[type].recruitmentRateCount++
+      }
 
-    if (course.completionRate) {
-      statsByType[type].totalCompletionRate += course.completionRate
-      statsByType[type].completionRateCount++
-    }
-  })
+      if (course.completion_rate) {
+        statsByType[type].totalCompletionRate += course.completion_rate
+        statsByType[type].completionRateCount++
+      }
+    })
+  }
 
   // 평균 계산
   const statsArray = Object.entries(statsByType).map(([type, stats]) => ({
@@ -82,14 +76,14 @@ export default async function StatisticsPage() {
   }))
 
   // 전체 통계
-  const totalCourses = courses.length
-  const totalCapacity = courses.reduce((sum, c) => sum + (c.capacity || 0), 0)
-  const totalStudents = courses.reduce((sum, c) => sum + (c.currentStudentsGov || 0) + (c.currentStudentsGen || 0), 0)
-  const avgRecruitmentRate = courses.filter(c => c.recruitmentRate).length > 0
-    ? (courses.reduce((sum, c) => sum + (c.recruitmentRate || 0), 0) / courses.filter(c => c.recruitmentRate).length).toFixed(1)
+  const totalCourses = courses ? courses.length : 0
+  const totalCapacity = courses ? courses.reduce((sum, c) => sum + (c.capacity || 0), 0) : 0
+  const totalStudents = courses ? courses.reduce((sum, c) => sum + (c.current_students_gov || 0) + (c.current_students_gen || 0), 0) : 0
+  const avgRecruitmentRate = courses && courses.filter(c => c.recruitment_rate).length > 0
+    ? (courses.reduce((sum, c) => sum + (c.recruitment_rate || 0), 0) / courses.filter(c => c.recruitment_rate).length).toFixed(1)
     : '0'
-  const avgCompletionRate = courses.filter(c => c.completionRate).length > 0
-    ? (courses.reduce((sum, c) => sum + (c.completionRate || 0), 0) / courses.filter(c => c.completionRate).length).toFixed(1)
+  const avgCompletionRate = courses && courses.filter(c => c.completion_rate).length > 0
+    ? (courses.reduce((sum, c) => sum + (c.completion_rate || 0), 0) / courses.filter(c => c.completion_rate).length).toFixed(1)
     : '0'
 
   return (
@@ -211,24 +205,24 @@ export default async function StatisticsPage() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {courses
-                .filter((c) => c.recruitmentRate)
-                .sort((a, b) => (b.recruitmentRate || 0) - (a.recruitmentRate || 0))
+              {courses && courses
+                .filter((c) => c.recruitment_rate)
+                .sort((a, b) => (b.recruitment_rate || 0) - (a.recruitment_rate || 0))
                 .slice(0, 10)
                 .map((course, index) => (
                   <TableRow key={index}>
-                    <TableCell className="font-medium">{course.courseName}</TableCell>
+                    <TableCell className="font-medium">{course.course_name}</TableCell>
                     <TableCell>{COURSE_TYPE_LABELS[course.type]}</TableCell>
                     <TableCell className="text-right">{course.capacity || '-'}명</TableCell>
                     <TableCell className="text-right">
-                      {(course.currentStudentsGov || 0) + (course.currentStudentsGen || 0)}명
+                      {(course.current_students_gov || 0) + (course.current_students_gen || 0)}명
                     </TableCell>
                     <TableCell className="text-right font-bold text-green-600">
-                      {course.recruitmentRate}%
+                      {course.recruitment_rate}%
                     </TableCell>
                   </TableRow>
                 ))}
-              {courses.filter((c) => c.recruitmentRate).length === 0 && (
+              {(!courses || courses.filter((c) => c.recruitment_rate).length === 0) && (
                 <TableRow>
                   <TableCell colSpan={5} className="h-24 text-center">
                     모집률 데이터가 없습니다

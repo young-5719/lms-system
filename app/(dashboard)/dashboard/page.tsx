@@ -1,45 +1,37 @@
-import { prisma } from '@/lib/prisma'
+import { createClient } from '@/lib/supabase/server'
 import StatsCard from '@/components/dashboard/StatsCard'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { format } from 'date-fns'
-import { ko } from 'date-fns/locale'
 
 const ROOMS = ['601호', '602호', '603호', '604호', '605호', '606호', '607호', '608호', '609호', '610호']
 
 export default async function DashboardPage() {
-  // 통계 데이터 조회
-  const totalCourses = await prisma.course.count()
+  const supabase = await createClient()
 
-  const courses = await prisma.course.findMany({
-    select: {
-      recruitmentRate: true,
-      completionRate: true,
-      roomNumber: true,
-      courseName: true,
-      type: true,
-      startDate: true,
-      endDate: true,
-      instructor: true,
-    },
-    orderBy: {
-      startDate: 'desc'
-    }
-  })
+  // 통계 데이터 조회
+  const { count: totalCourses } = await supabase
+    .from('courses')
+    .select('*', { count: 'exact', head: true })
+
+  const { data: courses } = await supabase
+    .from('courses')
+    .select('recruitment_rate, completion_rate, room_number, course_name, type, start_date, end_date, instructor')
+    .order('start_date', { ascending: false })
 
   // 평균 모집률 계산
-  const avgRecruitmentRate = courses.length > 0
-    ? (courses.reduce((sum, c) => sum + (c.recruitmentRate || 0), 0) / courses.length).toFixed(1)
+  const avgRecruitmentRate = courses && courses.length > 0
+    ? (courses.reduce((sum, c) => sum + (c.recruitment_rate || 0), 0) / courses.length).toFixed(1)
     : '0'
 
   // 평균 수료율 계산
-  const avgCompletionRate = courses.length > 0
-    ? (courses.reduce((sum, c) => sum + (c.completionRate || 0), 0) / courses.length).toFixed(1)
+  const avgCompletionRate = courses && courses.length > 0
+    ? (courses.reduce((sum, c) => sum + (c.completion_rate || 0), 0) / courses.length).toFixed(1)
     : '0'
 
   // 진행 중인 과정
   const now = new Date()
-  const ongoingCourses = courses.filter(c => c.startDate <= now && c.endDate >= now)
+  const ongoingCourses = courses ? courses.filter(c => new Date(c.start_date) <= now && new Date(c.end_date) >= now) : []
 
   return (
     <div className="space-y-6">
@@ -52,7 +44,7 @@ export default async function DashboardPage() {
       <div className="grid gap-4 md:grid-cols-4">
         <StatsCard
           title="전체 과정"
-          value={totalCourses}
+          value={totalCourses || 0}
           description="등록된 총 과정 수"
         />
         <StatsCard
@@ -112,12 +104,12 @@ export default async function DashboardPage() {
                       ) : (
                         ongoingCourses.map((course, index) => (
                           <tr key={index} className="border-b">
-                            <td className="p-4 text-sm">{course.courseName}</td>
-                            <td className="p-4 text-sm">{course.roomNumber}</td>
+                            <td className="p-4 text-sm">{course.course_name}</td>
+                            <td className="p-4 text-sm">{course.room_number}</td>
                             <td className="p-4 text-sm">{course.type}</td>
                             <td className="p-4 text-sm">{course.instructor || '-'}</td>
                             <td className="p-4 text-sm">
-                              {format(new Date(course.startDate), 'yyyy-MM-dd')} ~ {format(new Date(course.endDate), 'yyyy-MM-dd')}
+                              {format(new Date(course.start_date), 'yyyy-MM-dd')} ~ {format(new Date(course.end_date), 'yyyy-MM-dd')}
                             </td>
                           </tr>
                         ))
@@ -129,7 +121,7 @@ export default async function DashboardPage() {
             </TabsContent>
 
             {ROOMS.map((room) => {
-              const roomCourses = ongoingCourses.filter(c => c.roomNumber === room)
+              const roomCourses = ongoingCourses.filter(c => c.room_number === room)
               return (
                 <TabsContent key={room} value={room} className="space-y-4">
                   <div className="rounded-md border">
@@ -153,11 +145,11 @@ export default async function DashboardPage() {
                           ) : (
                             roomCourses.map((course, index) => (
                               <tr key={index} className="border-b">
-                                <td className="p-4 text-sm">{course.courseName}</td>
+                                <td className="p-4 text-sm">{course.course_name}</td>
                                 <td className="p-4 text-sm">{course.type}</td>
                                 <td className="p-4 text-sm">{course.instructor || '-'}</td>
                                 <td className="p-4 text-sm">
-                                  {format(new Date(course.startDate), 'yyyy-MM-dd')} ~ {format(new Date(course.endDate), 'yyyy-MM-dd')}
+                                  {format(new Date(course.start_date), 'yyyy-MM-dd')} ~ {format(new Date(course.end_date), 'yyyy-MM-dd')}
                                 </td>
                               </tr>
                             ))
