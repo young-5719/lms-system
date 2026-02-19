@@ -10,15 +10,34 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table'
-import { format } from 'date-fns'
+import { format, isBefore, startOfDay } from 'date-fns'
 import DeleteCourseButton from '@/components/courses/DeleteCourseButton'
+
+const TYPE_LABEL: Record<string, string> = {
+  GENERAL: '일반',
+  EMPLOYED: '재직자',
+  UNEMPLOYED: '실업자',
+  NATIONAL: '국기',
+  ASSESSMENT: '과평',
+  KDT: 'KDT',
+  INDUSTRY: '산대특',
+}
 
 export default async function CoursesPage() {
   const supabase = await createClient()
-  const { data: courses } = await supabase
+  const { data: rawCourses } = await supabase
     .from('courses')
     .select('*')
-    .order('created_at', { ascending: false })
+    .order('start_date', { ascending: true })
+
+  // 정렬: 진행 중/예정 과정을 개강일 가까운 순으로 먼저, 지난 과정은 뒤로
+  const today = startOfDay(new Date())
+  const courses = rawCourses?.sort((a, b) => {
+    const aEnded = isBefore(new Date(a.end_date), today)
+    const bEnded = isBefore(new Date(b.end_date), today)
+    if (aEnded !== bEnded) return aEnded ? 1 : -1
+    return new Date(a.start_date).getTime() - new Date(b.start_date).getTime()
+  }) || []
 
   return (
     <div className="space-y-6">
@@ -59,20 +78,22 @@ export default async function CoursesPage() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {!courses || courses.length === 0 ? (
+                {courses.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={8} className="h-24 text-center">
+                    <TableCell colSpan={12} className="h-24 text-center">
                       등록된 과정이 없습니다
                     </TableCell>
                   </TableRow>
                 ) : (
-                  courses.map((course) => (
-                    <TableRow key={course.id}>
+                  courses.map((course) => {
+                    const ended = isBefore(new Date(course.end_date), today)
+                    return (
+                    <TableRow key={course.id} className={ended ? 'opacity-50' : ''}>
                       <TableCell className="font-medium whitespace-nowrap">{course.training_id}</TableCell>
                       <TableCell className="whitespace-nowrap">{course.course_name}</TableCell>
                       <TableCell className="whitespace-nowrap">{course.room_number}</TableCell>
                       <TableCell className="whitespace-nowrap">{course.category || '-'}</TableCell>
-                      <TableCell className="whitespace-nowrap">{course.type}</TableCell>
+                      <TableCell className="whitespace-nowrap">{TYPE_LABEL[course.type] || course.type}</TableCell>
                       <TableCell className="whitespace-nowrap">{course.is_weekend === 'WEEKEND' ? '주말' : '평일'}</TableCell>
                       <TableCell className="whitespace-nowrap">{course.instructor || '-'}</TableCell>
                       <TableCell className="whitespace-nowrap">
@@ -95,7 +116,8 @@ export default async function CoursesPage() {
                         <DeleteCourseButton courseId={course.id} />
                       </TableCell>
                     </TableRow>
-                  ))
+                    )
+                  })
                 )}
               </TableBody>
             </Table>
