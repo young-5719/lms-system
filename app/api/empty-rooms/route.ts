@@ -43,7 +43,7 @@ export async function GET(request: NextRequest) {
     // 해당 날짜에 진행 중인 과정 조회
     const { data: courses } = await supabase
       .from('courses')
-      .select('room_number, changed_room, start_time, end_time, is_weekend, course_name, instructor, type')
+      .select('room_number, changed_room, start_time, end_time, is_weekend, course_name, instructor, type, days_of_week, day_of_week')
       .lte('start_date', date)
       .gte('end_date', date)
 
@@ -61,6 +61,11 @@ export async function GET(request: NextRequest) {
       for (const course of courses) {
         if (course.is_weekend === 'WEEKDAY' && isWeekend) continue
         if (course.is_weekend === 'WEEKEND' && !isWeekend) continue
+
+        // days_of_week / day_of_week 컬럼으로 실제 수업 요일 체크
+        const daysStr = course.days_of_week || course.day_of_week
+        const courseDays = parseDaysOfWeek(daysStr)
+        if (courseDays && !courseDays.includes(dayOfWeek)) continue
 
         const actualRoom = String(course.changed_room || course.room_number || '').trim()
         if (!actualRoom || !course.start_time || !course.end_time) continue
@@ -120,7 +125,7 @@ export async function POST(request: NextRequest) {
 
     const { data: occupiedCourses } = await supabase
       .from('courses')
-      .select('room_number, changed_room, start_time, end_time, is_weekend')
+      .select('room_number, changed_room, start_time, end_time, is_weekend, days_of_week, day_of_week')
       .lte('start_date', date)
       .gte('end_date', date)
 
@@ -130,6 +135,10 @@ export async function POST(request: NextRequest) {
       for (const course of occupiedCourses) {
         if (course.is_weekend === 'WEEKDAY' && isWeekend) continue
         if (course.is_weekend === 'WEEKEND' && !isWeekend) continue
+
+        const daysStr = course.days_of_week || course.day_of_week
+        const courseDays = parseDaysOfWeek(daysStr)
+        if (courseDays && !courseDays.includes(dayOfWeek)) continue
 
         const actualRoom = String(course.changed_room || course.room_number || '').trim()
         if (!actualRoom || !course.start_time || !course.end_time) continue
@@ -157,4 +166,25 @@ export async function POST(request: NextRequest) {
 function timeToMinutes(time: string): number {
   const [hours, minutes] = time.split(':').map(Number)
   return hours * 60 + (minutes || 0)
+}
+
+// 한국어 요일 문자열 → JS getDay() 숫자 배열 (0=일, 1=월 ... 6=토)
+function parseDaysOfWeek(daysStr: string | null | undefined): number[] | null {
+  if (!daysStr) return null
+  const s = daysStr.trim()
+
+  // 월~금 / 월-금 패턴 (평일 전체)
+  if (/월.?금/.test(s) || s === '평일') return [1, 2, 3, 4, 5]
+
+  const dayMap: Record<string, number> = {
+    '월': 1, '화': 2, '수': 3, '목': 4, '금': 5, '토': 6, '일': 0,
+  }
+
+  const days: number[] = []
+  for (const char of s) {
+    if (dayMap[char] !== undefined && !days.includes(dayMap[char])) {
+      days.push(dayMap[char])
+    }
+  }
+  return days.length > 0 ? days : null
 }
