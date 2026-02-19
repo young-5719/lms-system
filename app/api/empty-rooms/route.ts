@@ -43,7 +43,7 @@ export async function GET(request: NextRequest) {
     // 해당 날짜에 진행 중인 과정 조회
     const { data: courses } = await supabase
       .from('courses')
-      .select('room_number, changed_room, start_time, end_time, is_weekend, course_name, instructor, type, days_of_week, day_of_week')
+      .select('room_number, changed_room, start_time, end_time, is_weekend, course_name, instructor, type, days_of_week, day_of_week, lecture_days, start_date')
       .lte('start_date', date)
       .gte('end_date', date)
 
@@ -62,10 +62,16 @@ export async function GET(request: NextRequest) {
         if (course.is_weekend === 'WEEKDAY' && isWeekend) continue
         if (course.is_weekend === 'WEEKEND' && !isWeekend) continue
 
-        // days_of_week / day_of_week 컬럼으로 실제 수업 요일 체크
-        const daysStr = course.days_of_week || course.day_of_week
-        const courseDays = parseDaysOfWeek(daysStr)
-        if (courseDays && !courseDays.includes(dayOfWeek)) continue
+        // lecture_days(col38)에 실제 수업 날짜 목록이 있으면 우선 사용
+        if (course.lecture_days) {
+          const validDates = parseLectureDates(course.lecture_days, course.start_date)
+          if (!validDates.has(date)) continue
+        } else {
+          // lecture_days 없으면 day_of_week 요일 패턴으로 체크
+          const daysStr = course.days_of_week || course.day_of_week
+          const courseDays = parseDaysOfWeek(daysStr)
+          if (courseDays && !courseDays.includes(dayOfWeek)) continue
+        }
 
         const actualRoom = String(course.changed_room || course.room_number || '').trim()
         if (!actualRoom || !course.start_time || !course.end_time) continue
@@ -125,7 +131,7 @@ export async function POST(request: NextRequest) {
 
     const { data: occupiedCourses } = await supabase
       .from('courses')
-      .select('room_number, changed_room, start_time, end_time, is_weekend, days_of_week, day_of_week')
+      .select('room_number, changed_room, start_time, end_time, is_weekend, days_of_week, day_of_week, lecture_days, start_date')
       .lte('start_date', date)
       .gte('end_date', date)
 
@@ -136,9 +142,14 @@ export async function POST(request: NextRequest) {
         if (course.is_weekend === 'WEEKDAY' && isWeekend) continue
         if (course.is_weekend === 'WEEKEND' && !isWeekend) continue
 
-        const daysStr = course.days_of_week || course.day_of_week
-        const courseDays = parseDaysOfWeek(daysStr)
-        if (courseDays && !courseDays.includes(dayOfWeek)) continue
+        if (course.lecture_days) {
+          const validDates = parseLectureDates(course.lecture_days, course.start_date)
+          if (!validDates.has(date)) continue
+        } else {
+          const daysStr = course.days_of_week || course.day_of_week
+          const courseDays = parseDaysOfWeek(daysStr)
+          if (courseDays && !courseDays.includes(dayOfWeek)) continue
+        }
 
         const actualRoom = String(course.changed_room || course.room_number || '').trim()
         if (!actualRoom || !course.start_time || !course.end_time) continue
@@ -166,6 +177,30 @@ export async function POST(request: NextRequest) {
 function timeToMinutes(time: string): number {
   const [hours, minutes] = time.split(':').map(Number)
   return hours * 60 + (minutes || 0)
+}
+
+// lecture_days 파싱: "(1월) 5, 7, 9...(2월) 2, 4..." → Set<"yyyy-MM-dd">
+function parseLectureDates(lectureDays: string, startDate: string): Set<string> {
+  const dates = new Set<string>()
+  const startYear = parseInt(startDate.slice(0, 4))
+
+  let currentYear = startYear
+  let prevMonth = 0
+
+  const sectionRegex = /\((\d+)월\)\s*([\d,\s]+)/g
+  let match
+  while ((match = sectionRegex.exec(lectureDays)) !== null) {
+    const month = parseInt(match[1])
+    // 월이 줄어들면 연도 넘어간 것 (예: 12월 → 1월)
+    if (prevMonth > 0 && month < prevMonth) currentYear++
+    prevMonth = month
+
+    const days = match[2].split(',').map(d => parseInt(d.trim())).filter(d => d >= 1 && d <= 31)
+    for (const day of days) {
+      dates.add(`${currentYear}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`)
+    }
+  }
+  return dates
 }
 
 // 한국어 요일 문자열 → JS getDay() 숫자 배열 (0=일, 1=월 ... 6=토)
