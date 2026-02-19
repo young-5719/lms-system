@@ -1,11 +1,11 @@
 import { createClient } from '@/lib/supabase/server'
 import StatsCard from '@/components/dashboard/StatsCard'
 import OngoingCoursesCard from '@/components/dashboard/OngoingCoursesCard'
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { format } from 'date-fns'
+import Link from 'next/link'
 
-const ROOMS = ['601호', '602호', '603호', '604호', '605호', '606호', '607호', '608호', '609호', '610호']
+const ALL_ROOMS = ['601', '602', '603', '604', '605', '606', '607', '608', '609', '610']
 
 export default async function DashboardPage() {
   const supabase = await createClient()
@@ -34,7 +34,40 @@ export default async function DashboardPage() {
 
   // 진행 중인 과정
   const now = new Date()
+  const today = format(now, 'yyyy-MM-dd')
   const ongoingCourses = courses ? courses.filter(c => new Date(c.start_date) <= now && new Date(c.end_date) >= now) : []
+
+  // 오늘의 빈 강의실 계산
+  const dayOfWeek = now.getDay()
+  const isWeekend = dayOfWeek === 0 || dayOfWeek === 6
+
+  const occupiedRooms = new Map<string, { courseName: string; instructor: string | null; type: string; startTime: string; endTime: string }>()
+
+  if (ongoingCourses) {
+    for (const course of ongoingCourses) {
+      if (course.is_weekend === 'WEEKDAY' && isWeekend) continue
+      if (course.is_weekend === 'WEEKEND' && !isWeekend) continue
+
+      const room = String(course.room_number || '').trim()
+      if (!room) continue
+
+      occupiedRooms.set(room, {
+        courseName: course.course_name,
+        instructor: course.instructor,
+        type: course.type,
+        startTime: course.start_time || '',
+        endTime: course.end_time || '',
+      })
+    }
+  }
+
+  const emptyRooms = ALL_ROOMS.filter(r => !occupiedRooms.has(r))
+  const usedRooms = ALL_ROOMS.filter(r => occupiedRooms.has(r))
+
+  const TYPE_LABEL: Record<string, string> = {
+    GENERAL: '일반', EMPLOYED: '재직자', UNEMPLOYED: '실업자',
+    NATIONAL: '국기', ASSESSMENT: '과평', KDT: 'KDT', INDUSTRY: '산대특',
+  }
 
   return (
     <div className="space-y-6">
@@ -63,104 +96,79 @@ export default async function DashboardPage() {
         />
       </div>
 
-      {/* 강의장별 탭 */}
+      {/* 오늘의 빈 강의실 현황 */}
       <Card>
-        <CardHeader>
-          <CardTitle>강의장별 현황</CardTitle>
-          <CardDescription>강의장을 선택하여 운영 중인 과정을 확인하세요</CardDescription>
+        <CardHeader className="flex flex-row items-center justify-between">
+          <div>
+            <CardTitle>오늘의 강의실 현황</CardTitle>
+            <CardDescription>
+              {format(now, 'yyyy년 M월 d일')} 기준 {isWeekend ? '(주말)' : '(평일)'}
+            </CardDescription>
+          </div>
+          <Link href="/empty-rooms">
+            <span className="text-sm text-blue-500 hover:text-blue-700 hover:underline">
+              상세보기 →
+            </span>
+          </Link>
         </CardHeader>
-        <CardContent>
-          <Tabs defaultValue="all" className="w-full">
-            <TabsList className="grid w-full grid-cols-11">
-              <TabsTrigger value="all">전체</TabsTrigger>
-              {ROOMS.map((room) => (
-                <TabsTrigger key={room} value={room}>
-                  {room}
-                </TabsTrigger>
-              ))}
-            </TabsList>
-
-            <TabsContent value="all" className="space-y-4">
-              <div className="rounded-md border">
-                <div className="overflow-x-auto">
-                  <table className="w-full">
-                    <thead>
-                      <tr className="border-b bg-muted/50">
-                        <th className="p-4 text-left text-sm font-medium">과정명</th>
-                        <th className="p-4 text-left text-sm font-medium">강의장</th>
-                        <th className="p-4 text-left text-sm font-medium">구분</th>
-                        <th className="p-4 text-left text-sm font-medium">강사</th>
-                        <th className="p-4 text-left text-sm font-medium">기간</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {ongoingCourses.length === 0 ? (
-                        <tr>
-                          <td colSpan={5} className="p-8 text-center text-muted-foreground">
-                            진행 중인 과정이 없습니다
-                          </td>
-                        </tr>
-                      ) : (
-                        ongoingCourses.map((course, index) => (
-                          <tr key={index} className="border-b">
-                            <td className="p-4 text-sm">{course.course_name}</td>
-                            <td className="p-4 text-sm">{course.room_number}</td>
-                            <td className="p-4 text-sm">{course.type}</td>
-                            <td className="p-4 text-sm">{course.instructor || '-'}</td>
-                            <td className="p-4 text-sm">
-                              {format(new Date(course.start_date), 'yyyy-MM-dd')} ~ {format(new Date(course.end_date), 'yyyy-MM-dd')}
-                            </td>
-                          </tr>
-                        ))
-                      )}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            </TabsContent>
-
-            {ROOMS.map((room) => {
-              const roomCourses = ongoingCourses.filter(c => c.room_number === room)
-              return (
-                <TabsContent key={room} value={room} className="space-y-4">
-                  <div className="rounded-md border">
-                    <div className="overflow-x-auto">
-                      <table className="w-full">
-                        <thead>
-                          <tr className="border-b bg-muted/50">
-                            <th className="p-4 text-left text-sm font-medium">과정명</th>
-                            <th className="p-4 text-left text-sm font-medium">구분</th>
-                            <th className="p-4 text-left text-sm font-medium">강사</th>
-                            <th className="p-4 text-left text-sm font-medium">기간</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {roomCourses.length === 0 ? (
-                            <tr>
-                              <td colSpan={4} className="p-8 text-center text-muted-foreground">
-                                {room}에서 진행 중인 과정이 없습니다
-                              </td>
-                            </tr>
-                          ) : (
-                            roomCourses.map((course, index) => (
-                              <tr key={index} className="border-b">
-                                <td className="p-4 text-sm">{course.course_name}</td>
-                                <td className="p-4 text-sm">{course.type}</td>
-                                <td className="p-4 text-sm">{course.instructor || '-'}</td>
-                                <td className="p-4 text-sm">
-                                  {format(new Date(course.start_date), 'yyyy-MM-dd')} ~ {format(new Date(course.end_date), 'yyyy-MM-dd')}
-                                </td>
-                              </tr>
-                            ))
-                          )}
-                        </tbody>
-                      </table>
-                    </div>
+        <CardContent className="space-y-6">
+          {/* 빈 강의실 */}
+          <div>
+            <h4 className="text-sm font-semibold text-green-700 mb-3">
+              사용 가능한 강의실 ({emptyRooms.length}개)
+            </h4>
+            {emptyRooms.length === 0 ? (
+              <p className="text-sm text-muted-foreground">빈 강의실이 없습니다</p>
+            ) : (
+              <div className="grid grid-cols-5 md:grid-cols-10 gap-2">
+                {emptyRooms.map((room) => (
+                  <div
+                    key={room}
+                    className="p-3 rounded-lg text-center bg-green-50 border-2 border-green-300"
+                  >
+                    <p className="text-lg font-bold text-green-700">{room}</p>
+                    <p className="text-[10px] text-green-500">비어있음</p>
                   </div>
-                </TabsContent>
-              )
-            })}
-          </Tabs>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* 사용 중인 강의실 */}
+          <div>
+            <h4 className="text-sm font-semibold text-red-700 mb-3">
+              사용 중인 강의실 ({usedRooms.length}개)
+            </h4>
+            {usedRooms.length === 0 ? (
+              <p className="text-sm text-muted-foreground">사용 중인 강의실이 없습니다</p>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                {usedRooms.map((room) => {
+                  const info = occupiedRooms.get(room)!
+                  return (
+                    <div
+                      key={room}
+                      className="p-3 rounded-lg bg-red-50 border border-red-200 flex items-center gap-3"
+                    >
+                      <div className="text-center bg-red-100 rounded-lg px-3 py-2 flex-shrink-0">
+                        <p className="text-lg font-bold text-red-700">{room}</p>
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <p className="text-sm font-medium truncate">{info.courseName}</p>
+                        <div className="flex gap-2 text-xs text-gray-500 mt-0.5">
+                          <span>{TYPE_LABEL[info.type] || info.type}</span>
+                          <span>|</span>
+                          <span>{info.instructor || '-'}</span>
+                          <span>|</span>
+                          <span>{info.startTime}~{info.endTime}</span>
+                        </div>
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            )}
+          </div>
         </CardContent>
       </Card>
     </div>
