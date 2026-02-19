@@ -37,11 +37,19 @@ export default async function DashboardPage() {
   const today = format(now, 'yyyy-MM-dd')
   const ongoingCourses = courses ? courses.filter(c => new Date(c.start_date) <= now && new Date(c.end_date) >= now) : []
 
-  // 오늘의 빈 강의실 계산
+  // 오늘 19시 이후 빈 강의실 계산
   const dayOfWeek = now.getDay()
   const isWeekend = dayOfWeek === 0 || dayOfWeek === 6
 
-  const occupiedRooms = new Map<string, { courseName: string; instructor: string | null; type: string; startTime: string; endTime: string }>()
+  function timeToMinutes(t: string) {
+    const [h, m] = t.split(':').map(Number)
+    return h * 60 + (m || 0)
+  }
+
+  const eveningStart = timeToMinutes('19:00')
+
+  // 19시 이후에 사용 중인 강의실
+  const eveningOccupied = new Map<string, { courseName: string; instructor: string | null; type: string; startTime: string; endTime: string }>()
 
   if (ongoingCourses) {
     for (const course of ongoingCourses) {
@@ -49,9 +57,13 @@ export default async function DashboardPage() {
       if (course.is_weekend === 'WEEKEND' && !isWeekend) continue
 
       const room = String(course.room_number || '').trim()
-      if (!room) continue
+      if (!room || !course.end_time) continue
 
-      occupiedRooms.set(room, {
+      const courseEnd = timeToMinutes(course.end_time)
+      // 19시 이후까지 수업이 있는 강의실만 사용 중으로 표시
+      if (courseEnd <= eveningStart) continue
+
+      eveningOccupied.set(room, {
         courseName: course.course_name,
         instructor: course.instructor,
         type: course.type,
@@ -61,8 +73,8 @@ export default async function DashboardPage() {
     }
   }
 
-  const emptyRooms = ALL_ROOMS.filter(r => !occupiedRooms.has(r))
-  const usedRooms = ALL_ROOMS.filter(r => occupiedRooms.has(r))
+  const emptyRooms = ALL_ROOMS.filter(r => !eveningOccupied.has(r))
+  const usedRooms = ALL_ROOMS.filter(r => eveningOccupied.has(r))
 
   const TYPE_LABEL: Record<string, string> = {
     GENERAL: '일반', EMPLOYED: '재직자', UNEMPLOYED: '실업자',
@@ -100,9 +112,9 @@ export default async function DashboardPage() {
       <Card>
         <CardHeader className="flex flex-row items-center justify-between">
           <div>
-            <CardTitle>오늘의 강의실 현황</CardTitle>
+            <CardTitle>오늘 19시 이후 강의실 현황</CardTitle>
             <CardDescription>
-              {format(now, 'yyyy년 M월 d일')} 기준 {isWeekend ? '(주말)' : '(평일)'}
+              {format(now, 'yyyy년 M월 d일')} 기준 {isWeekend ? '(주말)' : '(평일)'} · 19:00 이후 사용 가능 여부
             </CardDescription>
           </div>
           <Link href="/empty-rooms">
@@ -144,7 +156,7 @@ export default async function DashboardPage() {
             ) : (
               <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
                 {usedRooms.map((room) => {
-                  const info = occupiedRooms.get(room)!
+                  const info = eveningOccupied.get(room)!
                   return (
                     <div
                       key={room}

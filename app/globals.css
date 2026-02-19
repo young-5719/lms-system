@@ -67,3 +67,80 @@
     @apply bg-background text-foreground;
   }
 }
+
+/* 인쇄 스타일 */
+@media print {
+  /* 네비게이션, 컨트롤 숨김 */
+  nav, .no-print {
+    display: none !important;
+  }
+
+  /* 배경색 제거, 여백 최적화 */
+  body {
+    background: white !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  main {
+    padding: 0 !important;
+    margin: 0 !important;
+    max-width: none !important;
+  }
+
+  /* A4 페이지 설정 */
+  @page {
+    size: A4 portrait;
+    margin: 8mm 10mm;
+  }
+
+  /* 강의장별 페이지 분리 */
+  .room-schedule-page {
+    page-break-after: always;
+    break-after: page;
+    margin-bottom: 0 !important;
+  }
+
+  .room-schedule-page:last-child {
+    page-break-after: auto;
+    break-after: auto;
+  }
+
+  /* 테이블 보더 선명하게 */
+  table {
+    border-collapse: collapse !important;
+  }
+
+  th, td {
+    border: 1px solid #333 !important;
+  }
+
+  /* 뱃지 인쇄용 */
+  .room-schedule-page span[class*="bg-"] {
+    border: 1px solid #666 !important;
+  }
+
+  /* 테이블 고정 레이아웃 - 과정명 줄바꿈 허용 */
+  .room-schedule-page table {
+    table-layout: fixed !important;
+    width: 100% !important;
+  }
+
+  .room-schedule-page td,
+  .room-schedule-page th {
+    word-break: keep-all;
+    overflow-wrap: break-word;
+  }
+
+  /* 과정 수에 따른 인쇄 사이즈 */
+  .print-text-base { font-size: 16px !important; }
+  .print-text-sm-plus { font-size: 14px !important; }
+  .print-text-sm { font-size: 13px !important; }
+
+  .print-py-6 { padding-top: 18px !important; padding-bottom: 18px !important; }
+  .print-py-4 { padding-top: 12px !important; padding-bottom: 12px !important; }
+  .print-py-3 { padding-top: 8px !important; padding-bottom: 8px !important; }
+
+  .print-text-4xl { font-size: 36px !important; }
+  .print-text-3xl { font-size: 30px !important; }
+}

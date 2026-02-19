@@ -30,13 +30,13 @@ export default async function CoursesPage() {
     .select('*')
     .order('start_date', { ascending: true })
 
-  // 정렬: 진행 중/예정 과정을 개강일 가까운 순으로 먼저, 지난 과정은 뒤로
+  // 정렬: 개강일 최신순, 종료된 과정은 하단으로
   const today = startOfDay(new Date())
   const courses = rawCourses?.sort((a, b) => {
     const aEnded = isBefore(new Date(a.end_date), today)
     const bEnded = isBefore(new Date(b.end_date), today)
     if (aEnded !== bEnded) return aEnded ? 1 : -1
-    return new Date(a.start_date).getTime() - new Date(b.start_date).getTime()
+    return new Date(b.start_date).getTime() - new Date(a.start_date).getTime()
   }) || []
 
   return (
@@ -59,8 +59,8 @@ export default async function CoursesPage() {
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <div className="rounded-md border overflow-x-auto">
-            <Table className="min-w-[1200px]">
+          <div className="rounded-md border overflow-x-auto" style={{ transform: 'rotateX(180deg)' }}>
+            <Table className="min-w-[1200px]" style={{ transform: 'rotateX(180deg)' }}>
               <TableHeader>
                 <TableRow>
                   <TableHead className="whitespace-nowrap">훈련ID</TableHead>
