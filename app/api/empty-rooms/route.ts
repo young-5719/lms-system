@@ -43,7 +43,7 @@ export async function GET(request: NextRequest) {
     // 해당 날짜에 진행 중인 과정 조회
     const { data: courses } = await supabase
       .from('courses')
-      .select('room_number, changed_room, start_time, end_time, is_weekend, course_name, instructor, type, day_of_week, lecture_days, start_date')
+      .select('room_number, changed_room, change_start_date, start_time, end_time, is_weekend, course_name, instructor, type, day_of_week, lecture_days, start_date')
       .lte('start_date', date)
       .gte('end_date', date)
 
@@ -73,7 +73,11 @@ export async function GET(request: NextRequest) {
           if (courseDays && !courseDays.includes(dayOfWeek)) continue
         }
 
-        const actualRoom = String(course.changed_room || course.room_number || '').trim()
+        // change_start_date 이전이면 원래 강의실, 이후면 변경된 강의실 사용
+        let actualRoom = String(course.room_number || '').trim()
+        if (course.changed_room && course.change_start_date && date >= course.change_start_date) {
+          actualRoom = String(course.changed_room).trim()
+        }
         if (!actualRoom || !course.start_time || !course.end_time) continue
 
         const courseStart = timeToMinutes(course.start_time)
@@ -131,7 +135,7 @@ export async function POST(request: NextRequest) {
 
     const { data: occupiedCourses } = await supabase
       .from('courses')
-      .select('room_number, changed_room, start_time, end_time, is_weekend, day_of_week, lecture_days, start_date')
+      .select('room_number, changed_room, change_start_date, start_time, end_time, is_weekend, day_of_week, lecture_days, start_date')
       .lte('start_date', date)
       .gte('end_date', date)
 
@@ -151,7 +155,10 @@ export async function POST(request: NextRequest) {
           if (courseDays && !courseDays.includes(dayOfWeek)) continue
         }
 
-        const actualRoom = String(course.changed_room || course.room_number || '').trim()
+        let actualRoom = String(course.room_number || '').trim()
+        if (course.changed_room && course.change_start_date && date >= course.change_start_date) {
+          actualRoom = String(course.changed_room).trim()
+        }
         if (!actualRoom || !course.start_time || !course.end_time) continue
 
         const courseStart = timeToMinutes(course.start_time)
