@@ -43,7 +43,7 @@ export async function GET(request: NextRequest) {
     // 해당 날짜에 진행 중인 과정 조회
     const { data: courses } = await supabase
       .from('courses')
-      .select('room_number, changed_room, start_time, end_time, is_weekend, course_name, instructor, type, days_of_week, day_of_week, lecture_days, start_date')
+      .select('room_number, changed_room, start_time, end_time, is_weekend, course_name, instructor, type, day_of_week, lecture_days, start_date')
       .lte('start_date', date)
       .gte('end_date', date)
 
@@ -68,7 +68,7 @@ export async function GET(request: NextRequest) {
           if (!validDates.has(date)) continue
         } else {
           // lecture_days 없으면 day_of_week 요일 패턴으로 체크
-          const daysStr = course.days_of_week || course.day_of_week
+          const daysStr = course.day_of_week
           const courseDays = parseDaysOfWeek(daysStr)
           if (courseDays && !courseDays.includes(dayOfWeek)) continue
         }
@@ -131,7 +131,7 @@ export async function POST(request: NextRequest) {
 
     const { data: occupiedCourses } = await supabase
       .from('courses')
-      .select('room_number, changed_room, start_time, end_time, is_weekend, days_of_week, day_of_week, lecture_days, start_date')
+      .select('room_number, changed_room, start_time, end_time, is_weekend, day_of_week, lecture_days, start_date')
       .lte('start_date', date)
       .gte('end_date', date)
 
@@ -146,7 +146,7 @@ export async function POST(request: NextRequest) {
           const validDates = parseLectureDates(course.lecture_days, course.start_date)
           if (!validDates.has(date)) continue
         } else {
-          const daysStr = course.days_of_week || course.day_of_week
+          const daysStr = course.day_of_week
           const courseDays = parseDaysOfWeek(daysStr)
           if (courseDays && !courseDays.includes(dayOfWeek)) continue
         }
