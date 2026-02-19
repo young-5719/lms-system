@@ -1,90 +1,25 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 
-const ALL_ROOMS = ['601호', '602호', '603호', '604호', '605호', '606호', '607호', '608호', '609호', '610호']
+const ALL_ROOMS = ['601', '602', '603', '604', '605', '606', '607', '608', '609', '610']
 
-// POST - 빈 강의장 조회
-export async function POST(request: NextRequest) {
-  try {
-    const supabase = await createClient()
-    const { data: { user } } = await supabase.auth.getUser()
+const TIME_SLOTS = [
+  { label: '1교시 (09:00~10:00)', start: '09:00', end: '10:00' },
+  { label: '2교시 (10:00~11:00)', start: '10:00', end: '11:00' },
+  { label: '3교시 (11:00~12:00)', start: '11:00', end: '12:00' },
+  { label: '점심 (12:00~13:00)', start: '12:00', end: '13:00' },
+  { label: '4교시 (13:00~14:00)', start: '13:00', end: '14:00' },
+  { label: '5교시 (14:00~15:00)', start: '14:00', end: '15:00' },
+  { label: '6교시 (15:00~16:00)', start: '15:00', end: '16:00' },
+  { label: '7교시 (16:00~17:00)', start: '16:00', end: '17:00' },
+  { label: '8교시 (17:00~18:00)', start: '17:00', end: '18:00' },
+  { label: '야간1 (18:00~19:00)', start: '18:00', end: '19:00' },
+  { label: '야간2 (19:00~20:00)', start: '19:00', end: '20:00' },
+  { label: '야간3 (20:00~21:00)', start: '20:00', end: '21:00' },
+  { label: '야간4 (21:00~22:00)', start: '21:00', end: '22:00' },
+]
 
-    if (!user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    }
-
-    const { date, startTime, endTime } = await request.json()
-
-    if (!date || !startTime || !endTime) {
-      return NextResponse.json(
-        { error: 'date, startTime, and endTime are required' },
-        { status: 400 }
-      )
-    }
-
-    const targetDate = date
-
-    // 해당 날짜에 진행 중인 과정 조회
-    const { data: occupiedCourses } = await supabase
-      .from('courses')
-      .select('room_number, change_room_number, start_time, end_time, day_type')
-      .lte('start_date', targetDate)
-      .gte('end_date', targetDate)
-
-    // 요일 체크 (평일/주말 필터)
-    const targetDateObj = new Date(targetDate)
-    const dayOfWeek = targetDateObj.getDay() // 0: 일요일, 6: 토요일
-    const isWeekend = dayOfWeek === 0 || dayOfWeek === 6
-
-    // 시간이 겹치는 강의장 찾기
-    const occupiedRooms = new Set<string>()
-
-    if (occupiedCourses) {
-      for (const course of occupiedCourses) {
-        // 평일/주말 필터링
-        if (course.day_type === 'WEEKDAY' && isWeekend) continue
-        if (course.day_type === 'WEEKEND' && !isWeekend) continue
-
-        // 실제 사용 중인 강의장 (변경된 강의장 우선)
-        const actualRoom = course.change_room_number || course.room_number
-
-        if (!actualRoom || !course.start_time || !course.end_time) continue
-
-        // 시간 문자열을 분으로 변환 (예: "09:00" -> 540)
-        const courseStart = timeToMinutes(course.start_time)
-        const courseEnd = timeToMinutes(course.end_time)
-        const targetStart = timeToMinutes(startTime)
-        const targetEnd = timeToMinutes(endTime)
-
-        // 시간이 겹치는지 확인
-        const isOverlapping = !(courseEnd <= targetStart || courseStart >= targetEnd)
-
-        if (isOverlapping) {
-          occupiedRooms.add(actualRoom)
-        }
-      }
-    }
-
-    // 빈 강의장 찾기
-    const emptyRooms = ALL_ROOMS.filter(room => !occupiedRooms.has(room))
-
-    return NextResponse.json({
-      date,
-      startTime,
-      endTime,
-      emptyRooms,
-      occupiedRooms: Array.from(occupiedRooms),
-    })
-  } catch (error) {
-    console.error('Error finding empty rooms:', error)
-    return NextResponse.json(
-      { error: 'Failed to find empty rooms' },
-      { status: 500 }
-    )
-  }
-}
-
-// Google Sheets 데이터 기반 빈 강의장 조회 (시간 정보 없음, 날짜만)
+// GET - 날짜 기반 강의실 현황 조회
 export async function GET(request: NextRequest) {
   try {
     const supabase = await createClient()
@@ -98,80 +33,128 @@ export async function GET(request: NextRequest) {
     const date = searchParams.get('date')
 
     if (!date) {
-      return NextResponse.json(
-        { error: 'date is required' },
-        { status: 400 }
-      )
+      return NextResponse.json({ error: 'date is required' }, { status: 400 })
     }
 
-    // Google Sheets에서 데이터 가져오기
-    const googleSheetsUrl = process.env.GOOGLE_SHEETS_API_URL
+    const targetDateObj = new Date(date + 'T00:00:00')
+    const dayOfWeek = targetDateObj.getDay()
+    const isWeekend = dayOfWeek === 0 || dayOfWeek === 6
 
-    if (!googleSheetsUrl || googleSheetsUrl === 'YOUR_GOOGLE_APPS_SCRIPT_WEB_APP_URL_HERE') {
-      // Google Sheets URL이 설정되지 않았으면 Supabase 기반으로 폴백
-      const { data: occupiedCourses } = await supabase
-        .from('courses')
-        .select('room_number, change_room_number')
-        .lte('start_date', date)
-        .gte('end_date', date)
+    // 해당 날짜에 진행 중인 과정 조회
+    const { data: courses } = await supabase
+      .from('courses')
+      .select('room_number, changed_room, start_time, end_time, is_weekend, course_name, instructor, type')
+      .lte('start_date', date)
+      .gte('end_date', date)
 
-      const occupiedRooms = new Set<string>()
-      if (occupiedCourses) {
-        occupiedCourses.forEach(course => {
-          const room = course.change_room_number || course.room_number
-          if (room) occupiedRooms.add(room)
-        })
+    // 강의실별, 시간대별 사용 현황 매트릭스
+    const matrix: Record<string, Record<string, { occupied: boolean; courseName?: string; instructor?: string; type?: string }>> = {}
+
+    for (const room of ALL_ROOMS) {
+      matrix[room] = {}
+      for (const slot of TIME_SLOTS) {
+        matrix[room][slot.start] = { occupied: false }
       }
-
-      const emptyRooms = ALL_ROOMS.filter(room => !occupiedRooms.has(room))
-
-      return NextResponse.json({
-        date,
-        emptyRooms,
-        occupiedRooms: Array.from(occupiedRooms),
-        source: 'database',
-      })
     }
 
-    // Google Sheets에서 데이터 가져오기
-    const response = await fetch(googleSheetsUrl)
-    const data = await response.json()
+    if (courses) {
+      for (const course of courses) {
+        if (course.is_weekend === 'WEEKDAY' && isWeekend) continue
+        if (course.is_weekend === 'WEEKEND' && !isWeekend) continue
 
-    // 해당 날짜의 스케줄 찾기
-    const dateSchedule = data.schedule.find((s: any) => s.date === date)
+        const actualRoom = String(course.changed_room || course.room_number || '').trim()
+        if (!actualRoom || !course.start_time || !course.end_time) continue
 
-    if (!dateSchedule) {
-      return NextResponse.json({
-        date,
-        emptyRooms: ALL_ROOMS,
-        occupiedRooms: [],
-        source: 'google-sheets',
-      })
+        const courseStart = timeToMinutes(course.start_time)
+        const courseEnd = timeToMinutes(course.end_time)
+
+        for (const slot of TIME_SLOTS) {
+          const slotStart = timeToMinutes(slot.start)
+          const slotEnd = timeToMinutes(slot.end)
+          const isOverlapping = !(courseEnd <= slotStart || courseStart >= slotEnd)
+
+          if (isOverlapping && matrix[actualRoom]) {
+            matrix[actualRoom][slot.start] = {
+              occupied: true,
+              courseName: course.course_name,
+              instructor: course.instructor,
+              type: course.type,
+            }
+          }
+        }
+      }
     }
-
-    // 사용 중인 강의장
-    const occupiedRooms = Object.keys(dateSchedule.rooms)
-
-    // 빈 강의장
-    const emptyRooms = ALL_ROOMS.filter(room => !occupiedRooms.includes(room))
 
     return NextResponse.json({
       date,
-      emptyRooms,
-      occupiedRooms,
-      source: 'google-sheets',
+      isWeekend,
+      rooms: ALL_ROOMS,
+      timeSlots: TIME_SLOTS,
+      matrix,
     })
   } catch (error) {
     console.error('Error finding empty rooms:', error)
-    return NextResponse.json(
-      { error: 'Failed to find empty rooms' },
-      { status: 500 }
-    )
+    return NextResponse.json({ error: 'Failed to find empty rooms' }, { status: 500 })
   }
 }
 
-// 시간 문자열을 분으로 변환하는 헬퍼 함수
+// POST - 기존 호환 유지
+export async function POST(request: NextRequest) {
+  try {
+    const supabase = await createClient()
+    const { data: { user } } = await supabase.auth.getUser()
+
+    if (!user) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
+    const { date, startTime, endTime } = await request.json()
+
+    if (!date || !startTime || !endTime) {
+      return NextResponse.json({ error: 'date, startTime, and endTime are required' }, { status: 400 })
+    }
+
+    const targetDateObj = new Date(date + 'T00:00:00')
+    const dayOfWeek = targetDateObj.getDay()
+    const isWeekend = dayOfWeek === 0 || dayOfWeek === 6
+
+    const { data: occupiedCourses } = await supabase
+      .from('courses')
+      .select('room_number, changed_room, start_time, end_time, is_weekend')
+      .lte('start_date', date)
+      .gte('end_date', date)
+
+    const occupiedRooms = new Set<string>()
+
+    if (occupiedCourses) {
+      for (const course of occupiedCourses) {
+        if (course.is_weekend === 'WEEKDAY' && isWeekend) continue
+        if (course.is_weekend === 'WEEKEND' && !isWeekend) continue
+
+        const actualRoom = String(course.changed_room || course.room_number || '').trim()
+        if (!actualRoom || !course.start_time || !course.end_time) continue
+
+        const courseStart = timeToMinutes(course.start_time)
+        const courseEnd = timeToMinutes(course.end_time)
+        const targetStart = timeToMinutes(startTime)
+        const targetEnd = timeToMinutes(endTime)
+
+        if (!(courseEnd <= targetStart || courseStart >= targetEnd)) {
+          occupiedRooms.add(actualRoom)
+        }
+      }
+    }
+
+    const emptyRooms = ALL_ROOMS.filter(room => !occupiedRooms.has(room))
+
+    return NextResponse.json({ date, startTime, endTime, emptyRooms, occupiedRooms: Array.from(occupiedRooms) })
+  } catch (error) {
+    console.error('Error finding empty rooms:', error)
+    return NextResponse.json({ error: 'Failed to find empty rooms' }, { status: 500 })
+  }
+}
+
 function timeToMinutes(time: string): number {
   const [hours, minutes] = time.split(':').map(Number)
-  return hours * 60 + minutes
+  return hours * 60 + (minutes || 0)
 }

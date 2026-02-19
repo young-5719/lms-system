@@ -1,5 +1,6 @@
 import { createClient } from '@/lib/supabase/server'
 import StatsCard from '@/components/dashboard/StatsCard'
+import OngoingCoursesCard from '@/components/dashboard/OngoingCoursesCard'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { format } from 'date-fns'
@@ -16,18 +17,20 @@ export default async function DashboardPage() {
 
   const { data: courses } = await supabase
     .from('courses')
-    .select('recruitment_rate, completion_rate, room_number, course_name, type, start_date, end_date, instructor')
+    .select('recruitment_rate, completion_rate, room_number, course_name, type, start_date, end_date, instructor, start_time, end_time, is_weekend, category')
     .order('start_date', { ascending: false })
 
-  // 평균 모집률 계산
-  const avgRecruitmentRate = courses && courses.length > 0
-    ? (courses.reduce((sum, c) => sum + (c.recruitment_rate || 0), 0) / courses.length).toFixed(1)
-    : '0'
+  // 평균 모집률 계산 (값이 있는 과정만)
+  const coursesWithRecruitment = courses?.filter(c => c.recruitment_rate != null && c.recruitment_rate > 0) || []
+  const avgRecruitmentRate = coursesWithRecruitment.length > 0
+    ? (coursesWithRecruitment.reduce((sum, c) => sum + c.recruitment_rate, 0) / coursesWithRecruitment.length).toFixed(1)
+    : '-'
 
-  // 평균 수료율 계산
-  const avgCompletionRate = courses && courses.length > 0
-    ? (courses.reduce((sum, c) => sum + (c.completion_rate || 0), 0) / courses.length).toFixed(1)
-    : '0'
+  // 평균 수료율 계산 (값이 있는 과정만)
+  const coursesWithCompletion = courses?.filter(c => c.completion_rate != null && c.completion_rate > 0) || []
+  const avgCompletionRate = coursesWithCompletion.length > 0
+    ? (coursesWithCompletion.reduce((sum, c) => sum + c.completion_rate, 0) / coursesWithCompletion.length).toFixed(1)
+    : '-'
 
   // 진행 중인 과정
   const now = new Date()
@@ -47,20 +50,16 @@ export default async function DashboardPage() {
           value={totalCourses || 0}
           description="등록된 총 과정 수"
         />
-        <StatsCard
-          title="진행 중인 과정"
-          value={ongoingCourses.length}
-          description="현재 진행 중"
-        />
+        <OngoingCoursesCard courses={ongoingCourses} />
         <StatsCard
           title="평균 모집률"
-          value={`${avgRecruitmentRate}%`}
-          description="전체 과정 평균"
+          value={avgRecruitmentRate === '-' ? '-' : `${avgRecruitmentRate}%`}
+          description={coursesWithRecruitment.length > 0 ? `${coursesWithRecruitment.length}개 과정 기준` : '데이터 없음'}
         />
         <StatsCard
           title="평균 수료율"
-          value={`${avgCompletionRate}%`}
-          description="전체 과정 평균"
+          value={avgCompletionRate === '-' ? '-' : `${avgCompletionRate}%`}
+          description={coursesWithCompletion.length > 0 ? `${coursesWithCompletion.length}개 과정 기준` : '데이터 없음'}
         />
       </div>
 

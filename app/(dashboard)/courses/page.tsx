@@ -40,18 +40,22 @@ export default async function CoursesPage() {
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <div className="rounded-md border">
-            <Table>
+          <div className="rounded-md border overflow-x-auto">
+            <Table className="min-w-[1200px]">
               <TableHeader>
                 <TableRow>
-                  <TableHead>훈련ID</TableHead>
-                  <TableHead>과정명</TableHead>
-                  <TableHead>강의장</TableHead>
-                  <TableHead>구분</TableHead>
-                  <TableHead>강사</TableHead>
-                  <TableHead>기간</TableHead>
-                  <TableHead>모집률</TableHead>
-                  <TableHead className="text-right">작업</TableHead>
+                  <TableHead className="whitespace-nowrap">훈련ID</TableHead>
+                  <TableHead className="whitespace-nowrap min-w-[250px]">과정명</TableHead>
+                  <TableHead className="whitespace-nowrap">강의장</TableHead>
+                  <TableHead className="whitespace-nowrap">분야</TableHead>
+                  <TableHead className="whitespace-nowrap">구분</TableHead>
+                  <TableHead className="whitespace-nowrap">평일/주말</TableHead>
+                  <TableHead className="whitespace-nowrap">강사</TableHead>
+                  <TableHead className="whitespace-nowrap">기간</TableHead>
+                  <TableHead className="whitespace-nowrap">시간</TableHead>
+                  <TableHead className="whitespace-nowrap">정원</TableHead>
+                  <TableHead className="whitespace-nowrap">훈련비</TableHead>
+                  <TableHead className="whitespace-nowrap text-right">작업</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -64,16 +68,20 @@ export default async function CoursesPage() {
                 ) : (
                   courses.map((course) => (
                     <TableRow key={course.id}>
-                      <TableCell className="font-medium">{course.training_id}</TableCell>
-                      <TableCell>{course.course_name}</TableCell>
-                      <TableCell>{course.room_number}</TableCell>
-                      <TableCell>{course.type}</TableCell>
-                      <TableCell>{course.instructor || '-'}</TableCell>
-                      <TableCell>
+                      <TableCell className="font-medium whitespace-nowrap">{course.training_id}</TableCell>
+                      <TableCell className="whitespace-nowrap">{course.course_name}</TableCell>
+                      <TableCell className="whitespace-nowrap">{course.room_number}</TableCell>
+                      <TableCell className="whitespace-nowrap">{course.category || '-'}</TableCell>
+                      <TableCell className="whitespace-nowrap">{course.type}</TableCell>
+                      <TableCell className="whitespace-nowrap">{course.is_weekend === 'WEEKEND' ? '주말' : '평일'}</TableCell>
+                      <TableCell className="whitespace-nowrap">{course.instructor || '-'}</TableCell>
+                      <TableCell className="whitespace-nowrap">
                         {format(new Date(course.start_date), 'yyyy-MM-dd')} ~ {format(new Date(course.end_date), 'yyyy-MM-dd')}
                       </TableCell>
-                      <TableCell>{course.recruitment_rate ? `${course.recruitment_rate}%` : '-'}</TableCell>
-                      <TableCell className="text-right space-x-2">
+                      <TableCell className="whitespace-nowrap">{course.start_time} ~ {course.end_time}</TableCell>
+                      <TableCell className="whitespace-nowrap">{course.capacity || '-'}</TableCell>
+                      <TableCell className="whitespace-nowrap">{course.tuition ? course.tuition.toLocaleString() + '원' : '-'}</TableCell>
+                      <TableCell className="text-right space-x-2 whitespace-nowrap">
                         <Link href={`/courses/${course.id}`}>
                           <Button variant="outline" size="sm">
                             보기
