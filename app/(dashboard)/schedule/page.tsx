@@ -32,6 +32,39 @@ interface MatrixCell {
   notes: string
 }
 
+// lecture_days 파싱: "(1월) 5, 7, 9...(2월) 2, 4..." → Set<"yyyy-MM-dd">
+function parseLectureDates(lectureDays: string, startDate: string): Set<string> {
+  const dates = new Set<string>()
+  const startYear = parseInt(startDate.slice(0, 4))
+  let currentYear = startYear
+  let prevMonth = 0
+  const sectionRegex = /\((\d+)월\)\s*([\d,\s]+)/g
+  let match
+  while ((match = sectionRegex.exec(lectureDays)) !== null) {
+    const month = parseInt(match[1])
+    if (prevMonth > 0 && month < prevMonth) currentYear++
+    prevMonth = month
+    const days = match[2].split(',').map(d => parseInt(d.trim())).filter(d => d >= 1 && d <= 31)
+    for (const day of days) {
+      dates.add(`${currentYear}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`)
+    }
+  }
+  return dates
+}
+
+// 한국어 요일 문자열 → JS getDay() 숫자 배열
+function parseDaysOfWeek(daysStr: string | null | undefined): number[] | null {
+  if (!daysStr) return null
+  const s = daysStr.trim()
+  if (/월.?금/.test(s) || s === '평일') return [1, 2, 3, 4, 5]
+  const dayMap: Record<string, number> = { '월': 1, '화': 2, '수': 3, '목': 4, '금': 5, '토': 6, '일': 0 }
+  const days: number[] = []
+  for (const char of s) {
+    if (dayMap[char] !== undefined && !days.includes(dayMap[char])) days.push(dayMap[char])
+  }
+  return days.length > 0 ? days : null
+}
+
 export default async function SchedulePage() {
   const supabase = await createClient()
 
@@ -50,46 +83,75 @@ export default async function SchedulePage() {
     for (const course of courses) {
       const startDate = parseISO(course.start_date)
       const endDate = parseISO(course.end_date)
-      const room = course.change_room_number || course.room_number
 
       // 시작 시간으로 야간 여부 판단 (19:00 이후)
       const isEvening = course.start_time ? course.start_time >= '19:00' : false
 
+      // lecture_days 미리 파싱 (있는 경우)
+      const lectureDateSet = course.lecture_days
+        ? parseLectureDates(course.lecture_days, course.start_date)
+        : null
+
       // 과정 기간 내의 모든 날짜에 대해 스케줄 생성
       let currentDate = startDate
       while (currentDate <= endDate && currentDate <= new Date(Date.now() + 90 * 24 * 60 * 60 * 1000)) {
-        // 오늘 이후 90일까지만 표시
         if (isAfter(currentDate, startOfDay(new Date()))) {
-          const dayOfWeek = format(currentDate, 'EEEE', { locale: ko })
+          const dateStr = format(currentDate, 'yyyy-MM-dd')
+          const dayNum = currentDate.getDay() // 0=일, 6=토
+          const isWeekendDay = dayNum === 0 || dayNum === 6
 
-          // 평일/주말 체크
-          const isWeekend = dayOfWeek === '토요일' || dayOfWeek === '일요일'
-          if (
-            (course.day_type === 'WEEKDAY' && !isWeekend) ||
-            (course.day_type === 'WEEKEND' && isWeekend) ||
-            !course.day_type
-          ) {
-            let notes = ''
-            if (course.change_room_number && course.change_room_number !== course.room_number) {
-              notes = `${course.room_number} → ${course.change_room_number}`
-            }
-            if (course.schedule_change) {
-              notes += (notes ? ' | ' : '') + course.schedule_change
-            }
-
-            scheduleList.push({
-              date: format(currentDate, 'yyyy-MM-dd'),
-              dayOfWeek: format(currentDate, 'EEE', { locale: ko }),
-              time: course.start_time && course.end_time
-                ? `${course.start_time}-${course.end_time}`
-                : '-',
-              room: room || '-',
-              courseName: course.course_name || '-',
-              instructor: course.instructor || '-',
-              notes,
-              isEvening,
-            })
+          // 평일/주말 체크 (is_weekend 컬럼 사용)
+          if (course.is_weekend === 'WEEKDAY' && isWeekendDay) {
+            currentDate = new Date(currentDate.getTime() + 24 * 60 * 60 * 1000)
+            continue
           }
+          if (course.is_weekend === 'WEEKEND' && !isWeekendDay) {
+            currentDate = new Date(currentDate.getTime() + 24 * 60 * 60 * 1000)
+            continue
+          }
+
+          // lecture_days가 있으면 실제 수업 날짜 체크
+          if (lectureDateSet && lectureDateSet.size > 0) {
+            if (!lectureDateSet.has(dateStr)) {
+              currentDate = new Date(currentDate.getTime() + 24 * 60 * 60 * 1000)
+              continue
+            }
+          } else {
+            // lecture_days 없으면 day_of_week 요일 패턴 체크
+            const courseDays = parseDaysOfWeek(course.day_of_week)
+            if (courseDays && !courseDays.includes(dayNum)) {
+              currentDate = new Date(currentDate.getTime() + 24 * 60 * 60 * 1000)
+              continue
+            }
+          }
+
+          // 강의실 결정 (change_start_date 기준)
+          let room = course.room_number || '-'
+          if (course.changed_room && course.change_start_date && dateStr >= course.change_start_date) {
+            room = course.changed_room
+          }
+
+          let notes = ''
+          if (course.changed_room && course.change_start_date && dateStr >= course.change_start_date
+              && course.changed_room !== course.room_number) {
+            notes = `${course.room_number} → ${course.changed_room}`
+          }
+          if (course.schedule_change) {
+            notes += (notes ? ' | ' : '') + course.schedule_change
+          }
+
+          scheduleList.push({
+            date: dateStr,
+            dayOfWeek: format(currentDate, 'EEE', { locale: ko }),
+            time: course.start_time && course.end_time
+              ? `${course.start_time}-${course.end_time}`
+              : '-',
+            room,
+            courseName: course.course_name || '-',
+            instructor: course.instructor || '-',
+            notes,
+            isEvening,
+          })
         }
 
         // 다음 날로 이동
