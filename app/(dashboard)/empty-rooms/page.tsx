@@ -5,6 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { format, addDays, isToday, isBefore, startOfDay } from 'date-fns'
 import { ko } from 'date-fns/locale'
+import { KOREAN_HOLIDAYS } from '@/lib/holidays'
 
 interface SlotInfo {
   occupied: boolean
@@ -22,6 +23,8 @@ interface TimeSlot {
 interface RoomData {
   date: string
   isWeekend: boolean
+  isHoliday: boolean
+  holidayName: string | null
   rooms: string[]
   timeSlots: TimeSlot[]
   matrix: Record<string, Record<string, SlotInfo>>
@@ -113,30 +116,31 @@ export default function EmptyRoomsPage() {
               const dayOfWeek = d.getDay()
               const isSun = dayOfWeek === 0
               const isSat = dayOfWeek === 6
+              const holiday = KOREAN_HOLIDAYS[dateStr]
+              const isRed = isSun || !!holiday
               return (
                 <button
                   key={dateStr}
                   onClick={() => setSelectedDate(dateStr)}
                   className={`flex-shrink-0 px-4 py-3 rounded-lg border-2 text-center transition-all min-w-[80px]
                     ${isSelected
-                      ? 'border-blue-500 bg-blue-50 shadow-md'
-                      : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50'
+                      ? holiday ? 'border-red-400 bg-red-50 shadow-md' : 'border-blue-500 bg-blue-50 shadow-md'
+                      : holiday ? 'border-red-200 bg-red-50 hover:border-red-300' : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50'
                     }
                     ${isToday(d) ? 'ring-2 ring-blue-300' : ''}
                   `}
                 >
-                  <div className={`text-xs font-medium ${isSun ? 'text-red-500' : isSat ? 'text-blue-500' : 'text-gray-500'}`}>
+                  <div className={`text-xs font-medium ${isRed ? 'text-red-500' : isSat ? 'text-blue-500' : 'text-gray-500'}`}>
                     {format(d, 'EEE', { locale: ko })}
                   </div>
-                  <div className={`text-lg font-bold ${isSelected ? 'text-blue-700' : ''}`}>
+                  <div className={`text-lg font-bold ${isSelected ? (holiday ? 'text-red-700' : 'text-blue-700') : isRed ? 'text-red-600' : ''}`}>
                     {format(d, 'd')}
                   </div>
                   <div className="text-[10px] text-gray-400">
                     {format(d, 'M월')}
                   </div>
-                  {isToday(d) && (
-                    <div className="text-[10px] text-blue-500 font-semibold">오늘</div>
-                  )}
+                  {isToday(d) && <div className="text-[10px] text-blue-500 font-semibold">오늘</div>}
+                  {holiday && <div className="text-[9px] text-red-500 font-semibold leading-tight mt-0.5">공휴일</div>}
                 </button>
               )
             })}
@@ -144,8 +148,19 @@ export default function EmptyRoomsPage() {
         </CardContent>
       </Card>
 
+      {/* 공휴일 배너 */}
+      {data?.isHoliday && (
+        <div className="flex items-center gap-3 rounded-xl border-2 border-red-300 bg-red-50 px-5 py-4">
+          <span className="text-2xl">🎌</span>
+          <div>
+            <p className="font-bold text-red-700 text-lg">{data.holidayName}</p>
+            <p className="text-sm text-red-500">공휴일로 모든 강의실이 휴강입니다</p>
+          </div>
+        </div>
+      )}
+
       {/* 통계 요약 */}
-      {stats && (
+      {stats && !data?.isHoliday && (
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
           <Card>
             <CardContent className="pt-6 text-center">

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
+import { getHolidayName } from '@/lib/holidays'
 
 const ALL_ROOMS = ['601', '602', '603', '604', '605', '606', '607', '608', '609', '610']
 
@@ -39,6 +40,17 @@ export async function GET(request: NextRequest) {
     const targetDateObj = new Date(date + 'T00:00:00')
     const dayOfWeek = targetDateObj.getDay()
     const isWeekend = dayOfWeek === 0 || dayOfWeek === 6
+    const holidayName = getHolidayName(date)
+
+    // 공휴일이면 빈 매트릭스 즉시 반환
+    if (holidayName) {
+      const matrix: Record<string, Record<string, { occupied: boolean }>> = {}
+      for (const room of ALL_ROOMS) {
+        matrix[room] = {}
+        for (const slot of TIME_SLOTS) matrix[room][slot.start] = { occupied: false }
+      }
+      return NextResponse.json({ date, isWeekend, isHoliday: true, holidayName, rooms: ALL_ROOMS, timeSlots: TIME_SLOTS, matrix })
+    }
 
     // 해당 날짜에 진행 중인 과정 조회
     const { data: courses } = await supabase
@@ -66,10 +78,12 @@ export async function GET(request: NextRequest) {
         if (course.lecture_days) {
           const validDates = parseLectureDates(course.lecture_days, course.start_date)
           if (!validDates.has(date)) continue
+          // lecture_days가 있어도 day_of_week와 교차 검증 (잘못 포함된 날짜 방지)
+          const courseDays = parseDaysOfWeek(course.day_of_week)
+          if (courseDays && courseDays.length > 0 && !courseDays.includes(dayOfWeek)) continue
         } else {
           // lecture_days 없으면 day_of_week 요일 패턴으로 체크
-          const daysStr = course.day_of_week
-          const courseDays = parseDaysOfWeek(daysStr)
+          const courseDays = parseDaysOfWeek(course.day_of_week)
           if (courseDays && !courseDays.includes(dayOfWeek)) continue
         }
 
@@ -112,6 +126,8 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({
       date,
       isWeekend,
+      isHoliday: false,
+      holidayName: null,
       rooms: ALL_ROOMS,
       timeSlots: TIME_SLOTS,
       matrix,
@@ -158,9 +174,10 @@ export async function POST(request: NextRequest) {
         if (course.lecture_days) {
           const validDates = parseLectureDates(course.lecture_days, course.start_date)
           if (!validDates.has(date)) continue
+          const courseDays = parseDaysOfWeek(course.day_of_week)
+          if (courseDays && courseDays.length > 0 && !courseDays.includes(dayOfWeek)) continue
         } else {
-          const daysStr = course.day_of_week
-          const courseDays = parseDaysOfWeek(daysStr)
+          const courseDays = parseDaysOfWeek(course.day_of_week)
           if (courseDays && !courseDays.includes(dayOfWeek)) continue
         }
 
