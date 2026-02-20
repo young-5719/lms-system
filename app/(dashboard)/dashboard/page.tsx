@@ -19,10 +19,18 @@ export default async function DashboardPage() {
   const dayOfWeek = now.getDay()
   const isWeekend = dayOfWeek === 0 || dayOfWeek === 6
 
-  // 기본 집계용 과정 데이터 (총 과정 수, 진행 중, 강사 수)
+  // 날짜 계산
+  const in5Date = new Date(now); in5Date.setDate(in5Date.getDate() + 5)
+  const in3Date = new Date(now); in3Date.setDate(in3Date.getDate() + 3)
+  const tomorrowDate = new Date(now); tomorrowDate.setDate(tomorrowDate.getDate() + 1)
+  const in5days = format(in5Date, 'yyyy-MM-dd')
+  const in3days = format(in3Date, 'yyyy-MM-dd')
+  const tomorrow = format(tomorrowDate, 'yyyy-MM-dd')
+
+  // 기본 집계용 과정 데이터
   const { data: courses } = await supabase
     .from('courses')
-    .select('type, start_date, end_date, instructor')
+    .select('training_id, course_name, type, start_date, end_date, instructor, room_number')
 
   const allCourses = courses ?? []
   const totalCourses = allCourses.length
@@ -42,6 +50,26 @@ export default async function DashboardPage() {
       .filter(i => i && i !== '-')
   )
   const instructorCount = instructorSet.size
+
+  // 오늘 개강
+  const todayOpening = allCourses.filter(c => c.start_date === today)
+
+  // 5일 이내 개강 예정 (오늘 제외)
+  const openingSoon = allCourses
+    .filter(c => c.start_date >= tomorrow && c.start_date <= in5days)
+    .sort((a, b) => a.start_date.localeCompare(b.start_date))
+
+  // 3일 이내 종강 (오늘 포함)
+  const closingSoon = allCourses
+    .filter(c => c.end_date >= today && c.end_date <= in3days)
+    .sort((a, b) => a.end_date.localeCompare(b.end_date))
+
+  const dDayLabel = (dateStr: string) => {
+    const diff = Math.round((new Date(dateStr).getTime() - new Date(today).getTime()) / 86400000)
+    if (diff === 0) return '오늘'
+    if (diff > 0) return `D-${diff}`
+    return `D+${Math.abs(diff)}`
+  }
 
   // ── 내부 API 호출용 Base URL + 쿠키 ─────────────────────────
   const headersList = await headers()
@@ -100,6 +128,102 @@ export default async function DashboardPage() {
           {format(now, 'yyyy년 M월 d일')} {isWeekend ? '(주말)' : '(평일)'} 기준
         </p>
       </div>
+
+      {/* ── 오늘 개강 배너 ────────────────────────────────── */}
+      {todayOpening.length > 0 && (
+        <div className="rounded-xl border-2 border-emerald-400 bg-emerald-50 p-5">
+          <div className="flex items-center gap-3 mb-3">
+            <span className="text-3xl animate-pulse">🎉</span>
+            <div>
+              <p className="text-xl font-bold text-emerald-800">오늘 개강!</p>
+              <p className="text-sm text-emerald-600">{todayOpening.length}개 과정이 오늘 시작합니다</p>
+            </div>
+          </div>
+          <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+            {todayOpening.map(c => (
+              <div key={c.training_id} className="bg-white rounded-lg border border-emerald-200 px-4 py-3">
+                <p className="font-semibold text-sm leading-snug">{c.course_name}</p>
+                <div className="flex gap-2 mt-1 text-xs text-emerald-700">
+                  <Badge className="bg-emerald-100 text-emerald-800 hover:bg-emerald-100 text-[10px]">
+                    {TYPE_LABEL[c.type] ?? c.type}
+                  </Badge>
+                  {c.room_number && <span className="self-center">{c.room_number}호</span>}
+                  {c.instructor && <span className="self-center text-gray-500">{c.instructor}</span>}
+                </div>
+                <p className="text-[11px] text-gray-400 mt-1">{c.start_date} ~ {c.end_date}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* ── 개강 예정 / 종강 임박 ──────────────────────────── */}
+      {(openingSoon.length > 0 || closingSoon.length > 0) && (
+        <div className="grid gap-4 md:grid-cols-2">
+
+          {/* 5일 이내 개강 예정 */}
+          <Card className="border-blue-200">
+            <CardHeader className="pb-3">
+              <CardTitle className="text-base flex items-center gap-2">
+                <span>📅</span> 개강 예정
+                <Badge className="ml-1 bg-blue-100 text-blue-700 hover:bg-blue-100">{openingSoon.length}개</Badge>
+              </CardTitle>
+              <CardDescription>오늘부터 5일 이내 개강 과정</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-2">
+              {openingSoon.length === 0 ? (
+                <p className="text-sm text-muted-foreground">해당 없음</p>
+              ) : openingSoon.map(c => (
+                <div key={c.training_id} className="flex items-start gap-3 p-2.5 rounded-lg bg-blue-50 border border-blue-100">
+                  <span className="text-xs font-bold text-blue-600 bg-blue-100 rounded px-2 py-1 whitespace-nowrap shrink-0">
+                    {dDayLabel(c.start_date)}
+                  </span>
+                  <div className="min-w-0">
+                    <p className="text-sm font-medium leading-snug">{c.course_name}</p>
+                    <p className="text-xs text-muted-foreground mt-0.5">
+                      {c.start_date} · {TYPE_LABEL[c.type] ?? c.type}
+                      {c.instructor ? ` · ${c.instructor}` : ''}
+                    </p>
+                  </div>
+                </div>
+              ))}
+            </CardContent>
+          </Card>
+
+          {/* 3일 이내 종강 임박 */}
+          <Card className="border-red-200">
+            <CardHeader className="pb-3">
+              <CardTitle className="text-base flex items-center gap-2">
+                <span>⏰</span> 종강 임박
+                <Badge className="ml-1 bg-red-100 text-red-700 hover:bg-red-100">{closingSoon.length}개</Badge>
+              </CardTitle>
+              <CardDescription>오늘부터 3일 이내 종강 과정</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-2">
+              {closingSoon.length === 0 ? (
+                <p className="text-sm text-muted-foreground">해당 없음</p>
+              ) : closingSoon.map(c => {
+                const isToday = c.end_date === today
+                return (
+                  <div key={c.training_id} className={`flex items-start gap-3 p-2.5 rounded-lg border ${isToday ? 'bg-red-50 border-red-200' : 'bg-orange-50 border-orange-100'}`}>
+                    <span className={`text-xs font-bold rounded px-2 py-1 whitespace-nowrap shrink-0 ${isToday ? 'bg-red-200 text-red-700' : 'bg-orange-100 text-orange-600'}`}>
+                      {isToday ? '오늘종강' : dDayLabel(c.end_date)}
+                    </span>
+                    <div className="min-w-0">
+                      <p className="text-sm font-medium leading-snug">{c.course_name}</p>
+                      <p className="text-xs text-muted-foreground mt-0.5">
+                        종강 {c.end_date} · {TYPE_LABEL[c.type] ?? c.type}
+                        {c.instructor ? ` · ${c.instructor}` : ''}
+                      </p>
+                    </div>
+                  </div>
+                )
+              })}
+            </CardContent>
+          </Card>
+
+        </div>
+      )}
 
       {/* 요약 통계 */}
       <div className="grid gap-4 md:grid-cols-5">
