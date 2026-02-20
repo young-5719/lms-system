@@ -23,7 +23,7 @@ export async function GET(request: NextRequest) {
     const { data: courses, error } = await supabase
       .from('courses')
       .select(
-        'training_id, course_name, type, instructor, start_date, end_date, tuition, current_students_gov, day_of_week, lecture_days, holidays, is_weekend'
+        'training_id, course_name, type, instructor, start_date, end_date, tuition, current_students_gov, capacity, day_of_week, lecture_days, holidays, is_weekend'
       )
       .in('type', ['NATIONAL', 'UNEMPLOYED', 'EMPLOYED'])
       .lte('start_date', today)   // 이미 시작한 과정
@@ -38,7 +38,8 @@ export async function GET(request: NextRequest) {
 
       for (const course of courses || []) {
         const tuition = course.tuition || 0
-        const students = course.current_students_gov || 0
+        // col46 = current_students_gov, null이면 capacity로 대체
+        const students = course.current_students_gov ?? course.capacity ?? 0
         if (tuition === 0 || students === 0) continue
 
         // 전체 수업일수 (과정 전체 기간)
@@ -50,7 +51,8 @@ export async function GET(request: NextRequest) {
         if (periodDays === 0) continue
 
         const multiplier = TYPE_MULTIPLIER[course.type] ?? 1
-        // 단위기간 훈련비 = tuition × (단위기간 수업일수 / 전체 수업일수)
+        // 공식: 훈련단가(tuition) × 인원(col46) × 변수 → 단위기간 비율로 배분
+        // 단위기간 지급액 = tuition × (단위기간 수업일수 / 전체 수업일수) × 인원 × 변수
         const revenue = Math.round(tuition * (periodDays / totalDays) * students * multiplier)
 
         courseRevenues.push({
@@ -163,6 +165,7 @@ function countTrainingDays(
     day_of_week: string | null
     holidays: string | null
     is_weekend: string
+    [key: string]: unknown
   },
   periodStart: string,
   periodEnd: string
