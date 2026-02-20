@@ -62,6 +62,7 @@ function toDateStr(d: Date): string {
 export default function CompetitorsPage() {
   const [district, setDistrict] = useState('구로구')
   const [minOne, setMinOne] = useState(false)
+  const [selectedType, setSelectedType] = useState('전체')
   const [startDate, setStartDate] = useState('2026-01-01')
   const [endDate, setEndDate] = useState(() => {
     const d = new Date()
@@ -96,13 +97,23 @@ export default function CompetitorsPage() {
     fetchData()
   }, [fetchData])
 
+  // 훈련유형 목록 (데이터 기반)
+  const uniqueTypes = data
+    ? ['전체', ...Array.from(new Set(data.items.map(i => i.trainType).filter(Boolean))).sort()]
+    : ['전체']
+
+  // 훈련유형 필터 적용
+  const filteredItems = data?.items.filter(item =>
+    selectedType === '전체' || item.trainType === selectedType
+  ) ?? []
+
   // 학원별 통계
-  const academyStats = data?.items.reduce((acc, item) => {
+  const academyStats = filteredItems.reduce((acc, item) => {
     if (!acc[item.academy]) acc[item.academy] = { count: 0, totalApplicants: 0 }
     acc[item.academy].count++
     acc[item.academy].totalApplicants += item.applicants
     return acc
-  }, {} as Record<string, { count: number; totalApplicants: number }>) || {}
+  }, {} as Record<string, { count: number; totalApplicants: number }>)
 
   function getDDayColor(dDay: string, dDayNum: number): string {
     if (dDay === '오늘개강') return 'text-red-600 font-bold'
@@ -157,6 +168,21 @@ export default function CompetitorsPage() {
                 onChange={(e) => setEndDate(e.target.value)}
                 className="h-10 rounded-md border border-gray-300 px-3 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
               />
+            </div>
+            <div>
+              <label className="text-sm font-medium mb-1 block">훈련유형</label>
+              <div className="w-44">
+                <Select value={selectedType} onValueChange={setSelectedType}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="유형 선택" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {uniqueTypes.map(t => (
+                      <SelectItem key={t} value={t}>{t}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
             </div>
             <div className="flex items-center gap-2 h-10">
               <Checkbox
@@ -226,11 +252,12 @@ export default function CompetitorsPage() {
           <CardHeader>
             <CardTitle>과정 목록</CardTitle>
             <CardDescription>
-              {district} 지역 경쟁기관 과정 ({data.totalCount}개)
+              {district} 지역 경쟁기관 과정 ({filteredItems.length}개
+              {selectedType !== '전체' && ` · ${selectedType} 필터`})
             </CardDescription>
           </CardHeader>
           <CardContent>
-            {data.items.length === 0 ? (
+            {filteredItems.length === 0 ? (
               <div className="py-12 text-center text-muted-foreground">
                 조건에 맞는 과정이 없습니다
               </div>
@@ -254,7 +281,7 @@ export default function CompetitorsPage() {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {data.items.map((item, idx) => (
+                    {filteredItems.map((item, idx) => (
                       <TableRow key={idx} className={item.dDay === '개강함' ? 'opacity-50' : ''}>
                         <TableCell className={`whitespace-nowrap ${getDDayColor(item.dDay, item.dDayNum)}`}>
                           {item.dDay}
