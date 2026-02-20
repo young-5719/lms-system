@@ -78,6 +78,25 @@ export async function GET(request: NextRequest) {
     if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
     const { searchParams } = new URL(request.url)
+
+    // 종강 임박 과정 목록 (7일 이내)
+    if (searchParams.get('upcoming') === 'true') {
+      const today = new Date()
+      const todayStr = today.toISOString().split('T')[0]
+      const in7days = new Date(today)
+      in7days.setDate(in7days.getDate() + 7)
+      const in7daysStr = in7days.toISOString().split('T')[0]
+
+      const { data: courses } = await supabase
+        .from('courses')
+        .select('training_id, course_name, start_date, end_date, instructor, type')
+        .gte('end_date', todayStr)
+        .lte('end_date', in7daysStr)
+        .order('end_date', { ascending: true })
+
+      return NextResponse.json({ courses: courses ?? [] })
+    }
+
     const trainingId = searchParams.get('trainingId')
     if (!trainingId) return NextResponse.json({ error: 'trainingId required' }, { status: 400 })
 

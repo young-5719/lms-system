@@ -1,9 +1,10 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { Card, CardContent } from '@/components/ui/card'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Badge } from '@/components/ui/badge'
 
 const ROLLOVER_COURSES = [
   '회계1급',
@@ -53,12 +54,42 @@ interface Student {
   name: string
 }
 
+interface UpcomingCourse {
+  training_id: number
+  course_name: string
+  start_date: string
+  end_date: string
+  instructor: string
+  type: string
+}
+
+const TYPE_LABEL: Record<string, string> = {
+  EMPLOYED: '재직자', UNEMPLOYED: '실업자', NATIONAL: '국기',
+  ASSESSMENT: '과평', KDT: 'KDT', INDUSTRY: '산대특', GENERAL: '일반',
+}
+
+function daysUntil(dateStr: string): number {
+  const today = new Date()
+  today.setHours(0, 0, 0, 0)
+  const end = new Date(dateStr)
+  end.setHours(0, 0, 0, 0)
+  return Math.round((end.getTime() - today.getTime()) / (1000 * 60 * 60 * 24))
+}
+
 export default function RolloverSurveyPage() {
   const [trainingIdInput, setTrainingIdInput] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [courseInfo, setCourseInfo] = useState<CourseInfo | null>(null)
   const [students, setStudents] = useState<Student[]>([])
+  const [upcomingCourses, setUpcomingCourses] = useState<UpcomingCourse[]>([])
+
+  useEffect(() => {
+    fetch('/api/rollover-survey?upcoming=true')
+      .then(r => r.json())
+      .then(d => setUpcomingCourses(d.courses ?? []))
+      .catch(() => {})
+  }, [])
 
   async function handleSearch() {
     if (!trainingIdInput.trim()) return
@@ -88,6 +119,54 @@ export default function RolloverSurveyPage() {
         <h2 className="text-3xl font-bold tracking-tight">이월희망조사표</h2>
         <p className="text-muted-foreground">종강 예정 과정의 수강생 대상 다음 과정 수요 파악</p>
       </div>
+
+      {/* 종강 임박 과정 - 인쇄 시 숨김 */}
+      <Card className="no-print">
+        <CardHeader className="pb-3">
+          <CardTitle className="text-base flex items-center gap-2">
+            <span>🔔</span> 종강 임박 과정
+            <Badge variant="secondary" className="ml-1">{upcomingCourses.length}개</Badge>
+            <span className="text-xs font-normal text-muted-foreground">— 종강일 기준 7일 이내</span>
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="pt-0">
+          {upcomingCourses.length === 0 ? (
+            <p className="text-sm text-muted-foreground">종강 임박 과정이 없습니다.</p>
+          ) : (
+            <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+              {upcomingCourses.map(c => {
+                const days = daysUntil(c.end_date)
+                const isToday = days === 0
+                const isUrgent = days <= 2
+                return (
+                  <button
+                    key={c.training_id}
+                    onClick={() => setTrainingIdInput(String(c.training_id))}
+                    className="text-left rounded-lg border p-3 hover:bg-gray-50 transition-colors w-full"
+                    style={{ borderColor: isUrgent ? '#fca5a5' : isToday ? '#f97316' : '#e2e8f0' }}
+                  >
+                    <div className="flex items-start justify-between gap-2 mb-1">
+                      <span className="text-xs font-bold" style={{ color: isUrgent ? '#dc2626' : '#64748b' }}>
+                        {isToday ? '오늘 종강' : `D-${days}`}
+                      </span>
+                      <Badge variant="outline" className="text-[10px] px-1 py-0 shrink-0">
+                        {TYPE_LABEL[c.type] ?? c.type}
+                      </Badge>
+                    </div>
+                    <p className="text-sm font-medium leading-snug line-clamp-2">{c.course_name}</p>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      {c.start_date} ~ {c.end_date}
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      ID: {c.training_id}{c.instructor ? ` · ${c.instructor}` : ''}
+                    </p>
+                  </button>
+                )
+              })}
+            </div>
+          )}
+        </CardContent>
+      </Card>
 
       {/* 검색 - 인쇄 시 숨김 */}
       <Card className="no-print">
