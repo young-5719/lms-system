@@ -226,7 +226,6 @@ export default function RolloverSurveyPage() {
                         <div style={{
                           writingMode: 'vertical-rl',
                           textOrientation: 'upright',
-                          transform: 'rotate(180deg)',
                           fontSize: '11px',
                           fontWeight: 600,
                           letterSpacing: '-1px',
