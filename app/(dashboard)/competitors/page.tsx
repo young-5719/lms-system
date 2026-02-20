@@ -63,6 +63,7 @@ export default function CompetitorsPage() {
   const [district, setDistrict] = useState('구로구')
   const [minOne, setMinOne] = useState(false)
   const [selectedType, setSelectedType] = useState('전체')
+  const [selectedAcademy, setSelectedAcademy] = useState('전체')
   const [startDate, setStartDate] = useState('2026-01-01')
   const [endDate, setEndDate] = useState(() => {
     const d = new Date()
@@ -102,9 +103,15 @@ export default function CompetitorsPage() {
     ? ['전체', ...Array.from(new Set(data.items.map(i => i.trainType).filter(Boolean))).sort()]
     : ['전체']
 
-  // 훈련유형 필터 적용
+  // 학원 목록 (데이터 기반)
+  const uniqueAcademies = data
+    ? ['전체', ...Array.from(new Set(data.items.map(i => i.academy).filter(Boolean))).sort()]
+    : ['전체']
+
+  // 훈련유형 + 학원 필터 적용
   const filteredItems = data?.items.filter(item =>
-    selectedType === '전체' || item.trainType === selectedType
+    (selectedType === '전체' || item.trainType === selectedType) &&
+    (selectedAcademy === '전체' || item.academy === selectedAcademy)
   ) ?? []
 
   // 학원별 통계
@@ -184,6 +191,21 @@ export default function CompetitorsPage() {
                 </Select>
               </div>
             </div>
+            <div>
+              <label className="text-sm font-medium mb-1 block">학원</label>
+              <div className="w-48">
+                <Select value={selectedAcademy} onValueChange={setSelectedAcademy}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="학원 선택" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {uniqueAcademies.map(a => (
+                      <SelectItem key={a} value={a}>{a}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
             <div className="flex items-center gap-2 h-10">
               <Checkbox
                 id="minOne"
@@ -253,7 +275,8 @@ export default function CompetitorsPage() {
             <CardTitle>과정 목록</CardTitle>
             <CardDescription>
               {district} 지역 경쟁기관 과정 ({filteredItems.length}개
-              {selectedType !== '전체' && ` · ${selectedType} 필터`})
+              {selectedType !== '전체' && ` · ${selectedType}`}
+              {selectedAcademy !== '전체' && ` · ${selectedAcademy}`})
             </CardDescription>
           </CardHeader>
           <CardContent>
