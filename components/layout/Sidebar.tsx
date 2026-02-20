@@ -12,6 +12,7 @@ const NAV_ITEMS = [
   { href: '/instructors', label: '강사별 수업시간', icon: '👨‍🏫' },
   { href: '/statistics', label: '통계', icon: '📈' },
   { href: '/competitors', label: '경쟁기관', icon: '🔍' },
+  { href: '/rollover-survey', label: '이월희망조사표', icon: '📝' },
 ]
 
 export default function Sidebar() {
