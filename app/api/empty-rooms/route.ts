@@ -55,7 +55,7 @@ export async function GET(request: NextRequest) {
     // 해당 날짜에 진행 중인 과정 조회
     const { data: courses } = await supabase
       .from('courses')
-      .select('room_number, changed_room, change_start_date, start_time, end_time, is_weekend, course_name, instructor, type, day_of_week, lecture_days, start_date, schedule_change')
+      .select('room_number, changed_room, change_start_date, start_time, end_time, is_weekend, course_name, instructor, type, day_of_week, lecture_days, holidays, start_date, schedule_change')
       .lte('start_date', date)
       .gte('end_date', date)
 
@@ -74,13 +74,16 @@ export async function GET(request: NextRequest) {
         if (course.is_weekend === 'WEEKDAY' && isWeekend) continue
         if (course.is_weekend === 'WEEKEND' && !isWeekend) continue
 
+        // col27~col37 휴강일 체크 — 휴강일이면 해당 날짜 제외
+        if (course.holidays) {
+          const holidayDates = parseHolidayDates(course.holidays)
+          if (holidayDates.has(date)) continue
+        }
+
         // lecture_days(col38)에 실제 수업 날짜 목록이 있으면 우선 사용
         if (course.lecture_days) {
           const validDates = parseLectureDates(course.lecture_days, course.start_date)
           if (!validDates.has(date)) continue
-          // lecture_days가 있어도 day_of_week와 교차 검증 (잘못 포함된 날짜 방지)
-          const courseDays = parseDaysOfWeek(course.day_of_week)
-          if (courseDays && courseDays.length > 0 && !courseDays.includes(dayOfWeek)) continue
         } else {
           // lecture_days 없으면 day_of_week 요일 패턴으로 체크
           const courseDays = parseDaysOfWeek(course.day_of_week)
@@ -160,7 +163,7 @@ export async function POST(request: NextRequest) {
 
     const { data: occupiedCourses } = await supabase
       .from('courses')
-      .select('room_number, changed_room, change_start_date, start_time, end_time, is_weekend, day_of_week, lecture_days, start_date')
+      .select('room_number, changed_room, change_start_date, start_time, end_time, is_weekend, day_of_week, lecture_days, holidays, start_date')
       .lte('start_date', date)
       .gte('end_date', date)
 
@@ -171,11 +174,14 @@ export async function POST(request: NextRequest) {
         if (course.is_weekend === 'WEEKDAY' && isWeekend) continue
         if (course.is_weekend === 'WEEKEND' && !isWeekend) continue
 
+        if (course.holidays) {
+          const holidayDates = parseHolidayDates(course.holidays)
+          if (holidayDates.has(date)) continue
+        }
+
         if (course.lecture_days) {
           const validDates = parseLectureDates(course.lecture_days, course.start_date)
           if (!validDates.has(date)) continue
-          const courseDays = parseDaysOfWeek(course.day_of_week)
-          if (courseDays && courseDays.length > 0 && !courseDays.includes(dayOfWeek)) continue
         } else {
           const courseDays = parseDaysOfWeek(course.day_of_week)
           if (courseDays && !courseDays.includes(dayOfWeek)) continue
@@ -210,6 +216,22 @@ export async function POST(request: NextRequest) {
 function timeToMinutes(time: string): number {
   const [hours, minutes] = time.split(':').map(Number)
   return hours * 60 + (minutes || 0)
+}
+
+// col27~col37 휴강일 파싱: "26/1/31(토)" → Set<"yyyy-MM-dd">
+// 구분자: 줄바꿈, 쉼표, 공백 조합
+function parseHolidayDates(holidaysStr: string): Set<string> {
+  const dates = new Set<string>()
+  // YY/M/D 또는 YY/MM/DD 패턴 추출 (뒤의 요일 괄호는 무시)
+  const regex = /(\d{2})\/(\d{1,2})\/(\d{1,2})/g
+  let match
+  while ((match = regex.exec(holidaysStr)) !== null) {
+    const year = 2000 + parseInt(match[1])
+    const month = String(parseInt(match[2])).padStart(2, '0')
+    const day = String(parseInt(match[3])).padStart(2, '0')
+    dates.add(`${year}-${month}-${day}`)
+  }
+  return dates
 }
 
 // col61 특별 수업시간 파싱: "20241005=09:00~18:00(12:00~13:00), 20241006=10:00~14:00"
