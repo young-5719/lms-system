@@ -38,6 +38,13 @@ function toInt(val: unknown): number | null {
   return n !== null ? Math.round(n) : null
 }
 
+// 날짜 검증: "yyyy-MM-dd" 형식이 아니면 null
+function parseDate(val: unknown): string | null {
+  if (!val) return null
+  const s = String(val).trim()
+  return /^\d{4}-\d{2}-\d{2}$/.test(s) ? s : null
+}
+
 // "09:00~14:00" → 5 (시간), 숫자면 그대로 반환
 function parseHoursFromRange(val: unknown): number | null {
   if (val === null || val === undefined) return null
@@ -82,8 +89,8 @@ export async function POST(request: NextRequest) {
         strategic_field: truncate(course.strategicField, 100),
         is_weekend: course.isWeekend || 'WEEKDAY',
         room_number: truncate(course.roomNumber, 20) || '-',
-        start_date: course.startDate,
-        end_date: course.endDate,
+        start_date: parseDate(course.startDate),
+        end_date: parseDate(course.endDate),
         day_of_week: truncate(course.dayOfWeek, 50),
         training_days: toInt(course.trainingDays),
         lecture_days: course.lectureDays || null,
@@ -103,7 +110,7 @@ export async function POST(request: NextRequest) {
         special_lecture_2: truncate(course.specialLecture2, 200),
         special_lecture_2_time: parseHoursFromRange(course.specialLecture2Time),
         operation_note: course.operationNote || null,
-        presentation_date: course.presentationDate || null,
+        presentation_date: parseDate(course.presentationDate),
         presentation_time: parseHoursFromRange(course.presentationTime),
         current_students_gov: toInt(course.currentStudentsGov),
         current_students_gen: toInt(course.currentStudentsGen),
@@ -111,7 +118,7 @@ export async function POST(request: NextRequest) {
         dropouts: toInt(course.dropouts),
         completion_count: toInt(course.completionCount),
         completion_rate: toNum(course.completionRate),
-        change_start_date: course.changeStartDate || null,
+        change_start_date: parseDate(course.changeStartDate),
         changed_room: truncate(course.changedRoom, 20),
         schedule_change: course.scheduleChange || null,
       }
