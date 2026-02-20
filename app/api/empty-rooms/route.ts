@@ -87,7 +87,13 @@ export async function GET(request: NextRequest) {
         } else {
           // lecture_days 없으면 day_of_week 요일 패턴으로 체크
           const courseDays = parseDaysOfWeek(course.day_of_week)
-          if (courseDays && !courseDays.includes(dayOfWeek)) continue
+          if (courseDays) {
+            if (!courseDays.includes(dayOfWeek)) continue
+          } else if (course.is_weekend === 'WEEKEND') {
+            // day_of_week도 없는 주말 과정은 start_date 요일로 추론 (토/일 구분)
+            const startDayOfWeek = new Date(course.start_date + 'T00:00:00').getDay()
+            if (dayOfWeek !== startDayOfWeek) continue
+          }
         }
 
         // change_start_date 이전이면 원래 강의실, 이후면 변경된 강의실 사용
@@ -184,7 +190,12 @@ export async function POST(request: NextRequest) {
           if (!validDates.has(date)) continue
         } else {
           const courseDays = parseDaysOfWeek(course.day_of_week)
-          if (courseDays && !courseDays.includes(dayOfWeek)) continue
+          if (courseDays) {
+            if (!courseDays.includes(dayOfWeek)) continue
+          } else if (course.is_weekend === 'WEEKEND') {
+            const startDayOfWeek = new Date(course.start_date + 'T00:00:00').getDay()
+            if (dayOfWeek !== startDayOfWeek) continue
+          }
         }
 
         let actualRoom = String(course.room_number || '').trim()
