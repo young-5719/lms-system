@@ -17,17 +17,17 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url)
     const year = parseInt(searchParams.get('year') || String(new Date().getFullYear()))
 
-    const yearStart = `${year}-01-01`
-    const yearEnd = `${year}-12-31`
+    // 현재 운영중인 과정만 조회 (오늘 날짜 기준)
+    const today = new Date().toISOString().slice(0, 10)
 
     const { data: courses, error } = await supabase
       .from('courses')
       .select(
-        'training_id, course_name, type, instructor, start_date, end_date, start_time, end_time, daily_hours, tuition, current_students_gov, day_of_week, lecture_days, holidays, is_weekend'
+        'training_id, course_name, type, instructor, start_date, end_date, tuition, current_students_gov, day_of_week, lecture_days, holidays, is_weekend'
       )
       .in('type', ['NATIONAL', 'UNEMPLOYED', 'EMPLOYED'])
-      .lte('start_date', yearEnd)
-      .gte('end_date', yearStart)
+      .lte('start_date', today)   // 이미 시작한 과정
+      .gte('end_date', today)      // 아직 종료되지 않은 과정
 
     if (error) throw error
 
@@ -41,14 +41,17 @@ export async function GET(request: NextRequest) {
         const students = course.current_students_gov || 0
         if (tuition === 0 || students === 0) continue
 
-        const trainingDays = countTrainingDays(course, period.start, period.end)
-        if (trainingDays === 0) continue
+        // 전체 수업일수 (과정 전체 기간)
+        const totalDays = countTrainingDays(course, course.start_date, course.end_date)
+        if (totalDays === 0) continue
 
-        const dailyHours = course.daily_hours || calcDailyHours(course.start_time, course.end_time)
-        if (dailyHours <= 0) continue
+        // 단위기간 내 수업일수
+        const periodDays = countTrainingDays(course, period.start, period.end)
+        if (periodDays === 0) continue
 
         const multiplier = TYPE_MULTIPLIER[course.type] ?? 1
-        const revenue = Math.round(trainingDays * dailyHours * tuition * students * multiplier)
+        // 단위기간 훈련비 = tuition × (단위기간 수업일수 / 전체 수업일수)
+        const revenue = Math.round(tuition * (periodDays / totalDays) * students * multiplier)
 
         courseRevenues.push({
           trainingId: course.training_id,
@@ -57,8 +60,8 @@ export async function GET(request: NextRequest) {
           type: course.type,
           startDate: course.start_date,
           endDate: course.end_date,
-          trainingDays,
-          dailyHours,
+          periodDays,
+          totalDays,
           tuition,
           students,
           multiplier,
@@ -80,7 +83,6 @@ export async function GET(request: NextRequest) {
       }
     })
 
-    // 연간 합계
     const annualByType = {
       NATIONAL: periods.reduce((s, p) => s + p.totalByType.NATIONAL, 0),
       UNEMPLOYED: periods.reduce((s, p) => s + p.totalByType.UNEMPLOYED, 0),
@@ -89,6 +91,7 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json({
       year,
+      today,
       periods,
       annualByType,
       annualTotal: Object.values(annualByType).reduce((a, b) => a + b, 0),
@@ -108,8 +111,8 @@ interface CourseRevenue {
   type: string
   startDate: string
   endDate: string
-  trainingDays: number
-  dailyHours: number
+  periodDays: number   // 단위기간 내 수업일수
+  totalDays: number    // 과정 전체 수업일수
   tuition: number
   students: number
   multiplier: number
@@ -126,26 +129,23 @@ function generateUnitPeriods(year: number) {
     const nextMonth = month === 12 ? 1 : month + 1
     const nextYear = month === 12 ? year + 1 : year
     const nm = String(nextMonth).padStart(2, '0')
-    const ny = nextYear
 
-    // 상반월: 1일~15일, 지급일 다음달 5일
     periods.push({
       id: `${year}-${mm}-1`,
       label: `${year}년 ${month}월 1~15일`,
       start: `${year}-${mm}-01`,
       end: `${year}-${mm}-15`,
-      paymentDate: `${ny}-${nm}-05`,
+      paymentDate: `${nextYear}-${nm}-05`,
       month,
       half: 1,
     })
 
-    // 하반월: 16일~말일, 지급일 다음달 20일
     periods.push({
       id: `${year}-${mm}-2`,
       label: `${year}년 ${month}월 16~${lastDay}일`,
       start: `${year}-${mm}-16`,
       end: `${year}-${mm}-${String(lastDay).padStart(2, '0')}`,
-      paymentDate: `${ny}-${nm}-20`,
+      paymentDate: `${nextYear}-${nm}-20`,
       month,
       half: 2,
     })
@@ -167,14 +167,13 @@ function countTrainingDays(
   periodStart: string,
   periodEnd: string
 ): number {
-  // 단위기간을 과정 기간으로 클램프
   const effectiveStart = periodStart > course.start_date ? periodStart : course.start_date
   const effectiveEnd = periodEnd < course.end_date ? periodEnd : course.end_date
   if (effectiveStart > effectiveEnd) return 0
 
   const holidaySet = parseHolidayDates(course.holidays || '')
 
-  // lecture_days(col38)가 있으면 실제 수업일 기준
+  // lecture_days(col38)가 있으면 실제 날짜 목록 기준
   if (course.lecture_days) {
     const lectureSet = parseLectureDates(course.lecture_days, course.start_date)
     let count = 0
@@ -214,22 +213,11 @@ function countTrainingDays(
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-function calcDailyHours(startTime: string | null, endTime: string | null): number {
-  if (!startTime || !endTime) return 0
-  const [sh, sm] = startTime.split(':').map(Number)
-  const [eh, em] = endTime.split(':').map(Number)
-  const totalMin = (eh * 60 + em) - (sh * 60 + sm)
-  // 6시간 이상이면 점심 1시간 차감
-  const lunchMin = totalMin >= 360 ? 60 : 0
-  return (totalMin - lunchMin) / 60
-}
-
 /** 과정별 휴강일 파싱: "26/1/31(토)" 또는 JS Date string 형식 모두 처리 */
 function parseHolidayDates(holidaysStr: string): Set<string> {
   const dates = new Set<string>()
   if (!holidaysStr) return dates
 
-  // Format 1: YY/M/DD (e.g., "26/1/31(토)")
   const regex1 = /(\d{2})\/(\d{1,2})\/(\d{1,2})/g
   let m: RegExpExecArray | null
   while ((m = regex1.exec(holidaysStr)) !== null) {
@@ -237,7 +225,6 @@ function parseHolidayDates(holidaysStr: string): Set<string> {
     dates.add(`${year}-${String(parseInt(m[2])).padStart(2, '0')}-${String(parseInt(m[3])).padStart(2, '0')}`)
   }
 
-  // Format 2: JS Date string (e.g., "Sat Feb 14 2026 00:00:00 GMT+0900...")
   const monthMap: Record<string, string> = {
     Jan: '01', Feb: '02', Mar: '03', Apr: '04', May: '05', Jun: '06',
     Jul: '07', Aug: '08', Sep: '09', Oct: '10', Nov: '11', Dec: '12',
