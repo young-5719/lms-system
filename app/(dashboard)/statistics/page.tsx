@@ -8,6 +8,8 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table'
+import StatisticsFilter from '@/components/statistics/StatisticsFilter'
+import { format } from 'date-fns'
 
 const TYPE_LABEL: Record<string, string> = {
   GENERAL: '일반',
@@ -19,24 +21,36 @@ const TYPE_LABEL: Record<string, string> = {
   INDUSTRY: '산대특',
 }
 
-// 구분 표시 순서
 const TYPE_ORDER = ['EMPLOYED', 'UNEMPLOYED', 'NATIONAL', 'GENERAL', 'ASSESSMENT', 'KDT', 'INDUSTRY']
 
-export default async function StatisticsPage() {
+export default async function StatisticsPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ from?: string; to?: string }>
+}) {
+  const params = await searchParams
+  const today = format(new Date(), 'yyyy-MM-dd')
+
+  // 기본값: 2026-01-01 ~ 오늘 (미래 개강 과정 자동 제외)
+  const from = params.from || '2026-01-01'
+  const to = params.to || today
+
   const supabase = await createClient()
 
-  // col5=type, col17=capacity, col46≈current_students_gov+gen, col53=completion_count
+  // col13(start_date) 기준으로 범위 필터 → 미래 개강 과정 제외
   const { data: courses } = await supabase
     .from('courses')
     .select('course_name, type, sub_category, capacity, current_students_gov, current_students_gen, completion_count')
+    .gte('start_date', from)
+    .lte('start_date', to)   // to 이후 개강 과정 제외
 
   // ── 구분별 통계 ────────────────────────────────────────────────
   const byType: Record<string, {
     count: number
-    totalCapacity: number       // col17 합계
-    totalStudents: number       // col46 합계 (gov+gen)
-    completionRateSum: number   // 과정별 수료율 합산
-    completionRateCount: number // 수료율 계산 가능 과정 수
+    totalCapacity: number
+    totalStudents: number
+    completionRateSum: number
+    completionRateCount: number
   }> = {}
 
   if (courses) {
@@ -53,16 +67,13 @@ export default async function StatisticsPage() {
       }
 
       const capacity = c.capacity || 0
-      // col46 = 총 수강생 (국비 + 일반)
       const students = (c.current_students_gov || 0) + (c.current_students_gen || 0)
-      // col53 = 수료인원
       const completed = c.completion_count || 0
 
       byType[type].count++
       byType[type].totalCapacity += capacity
       byType[type].totalStudents += students
 
-      // 평균 수료율: 수료인원(col53) / 수강생(col46) × 100
       if (students > 0 && completed > 0) {
         byType[type].completionRateSum += (completed / students) * 100
         byType[type].completionRateCount++
@@ -74,26 +85,22 @@ export default async function StatisticsPage() {
     .filter(type => byType[type])
     .map(type => {
       const s = byType[type]
-      // 모집률 = 총 수강생(col46) / 총 정원(col17) × 100
-      const recruitmentRate = s.totalCapacity > 0
-        ? (s.totalStudents / s.totalCapacity) * 100
-        : null
-      const avgCompletionRate = s.completionRateCount > 0
-        ? s.completionRateSum / s.completionRateCount
-        : null
-
       return {
         type,
         typeLabel: TYPE_LABEL[type] || type,
         count: s.count,
         totalCapacity: s.totalCapacity,
         totalStudents: s.totalStudents,
-        recruitmentRate,
-        avgCompletionRate,
+        recruitmentRate: s.totalCapacity > 0
+          ? (s.totalStudents / s.totalCapacity) * 100
+          : null,
+        avgCompletionRate: s.completionRateCount > 0
+          ? s.completionRateSum / s.completionRateCount
+          : null,
       }
     })
 
-  // ── 전체 합계 ────────────────────────────────────────────────
+  // ── 전체 합계 ─────────────────────────────────────────────────
   const totalCourses = courses?.length ?? 0
   const totalCapacity = statsArray.reduce((s, r) => s + r.totalCapacity, 0)
   const totalStudents = statsArray.reduce((s, r) => s + r.totalStudents, 0)
@@ -101,10 +108,10 @@ export default async function StatisticsPage() {
     ? (totalStudents / totalCapacity) * 100
     : null
 
-  const completedCoursesForRate = courses?.filter(c => {
+  const completedCoursesForRate = (courses ?? []).filter(c => {
     const students = (c.current_students_gov || 0) + (c.current_students_gen || 0)
     return students > 0 && (c.completion_count || 0) > 0
-  }) ?? []
+  })
   const overallAvgCompletionRate = completedCoursesForRate.length > 0
     ? completedCoursesForRate.reduce((sum, c) => {
         const students = (c.current_students_gov || 0) + (c.current_students_gen || 0)
@@ -112,7 +119,7 @@ export default async function StatisticsPage() {
       }, 0) / completedCoursesForRate.length
     : null
 
-  // ── 소분류별 모집률 ──────────────────────────────────────────
+  // ── 소분류별 모집률 ───────────────────────────────────────────
   const bySub: Record<string, { count: number; totalCapacity: number; totalStudents: number }> = {}
   if (courses) {
     for (const c of courses) {
@@ -135,7 +142,7 @@ export default async function StatisticsPage() {
     .filter(s => s.totalCapacity > 0)
     .sort((a, b) => b.recruitmentRate - a.recruitmentRate)
 
-  // ── 모집률 상위 과정 (상위 10개) ─────────────────────────────
+  // ── 모집률 상위 과정 ──────────────────────────────────────────
   const topCourses = (courses ?? [])
     .filter(c => (c.capacity || 0) > 0)
     .map(c => {
@@ -146,7 +153,7 @@ export default async function StatisticsPage() {
         type: c.type,
         capacity: c.capacity || 0,
         students,
-        recruitmentRate: ((students / (c.capacity || 1)) * 100),
+        recruitmentRate: (students / (c.capacity || 1)) * 100,
       }
     })
     .filter(c => c.students > 0)
@@ -154,17 +161,32 @@ export default async function StatisticsPage() {
     .slice(0, 10)
 
   const fmt = (n: number | null) => n != null ? n.toFixed(1) + '%' : '-'
+  const rateColor = (n: number | null) =>
+    n == null ? 'text-muted-foreground' :
+    n >= 80 ? 'font-semibold text-green-600' :
+    n >= 50 ? 'font-semibold text-yellow-600' :
+    'font-semibold text-red-600'
 
   return (
     <div className="space-y-6">
       <div>
         <h2 className="text-3xl font-bold tracking-tight">통계</h2>
         <p className="text-muted-foreground">
-          구분별 총정원(col17) · 총수강생(col46) · 수료인원(col53) 기준으로 계산
+          개강일(col13) 기준 조회 · 모집률 = 수강생÷정원 · 수료율 = 수료인원÷수강생
         </p>
       </div>
 
-      {/* 전체 통계 */}
+      {/* 조회 기간 필터 */}
+      <StatisticsFilter from={from} to={to} />
+
+      {/* 조회 결과 요약 */}
+      <div className="text-sm text-muted-foreground px-1">
+        조회 기간: <span className="font-medium text-foreground">{from}</span> ~ <span className="font-medium text-foreground">{to}</span>
+        &nbsp;개강 과정 &nbsp;<span className="font-medium text-foreground">{totalCourses}개</span>
+        {to >= today ? '' : <span className="ml-2 text-amber-600 text-xs">※ 미래 개강 과정 제외됨</span>}
+      </div>
+
+      {/* 전체 통계 카드 */}
       <div className="grid gap-4 md:grid-cols-5">
         <Card>
           <CardHeader className="pb-2">
@@ -198,10 +220,10 @@ export default async function StatisticsPage() {
             <CardTitle className="text-sm font-medium">전체 모집률</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className={`text-2xl font-bold ${overallRecruitmentRate != null && overallRecruitmentRate >= 80 ? 'text-green-600' : overallRecruitmentRate != null && overallRecruitmentRate >= 50 ? 'text-yellow-600' : 'text-red-600'}`}>
+            <div className={`text-2xl font-bold ${rateColor(overallRecruitmentRate)}`}>
               {fmt(overallRecruitmentRate)}
             </div>
-            <p className="text-xs text-muted-foreground">수강생 / 정원</p>
+            <p className="text-xs text-muted-foreground">수강생 ÷ 정원</p>
           </CardContent>
         </Card>
 
@@ -210,10 +232,10 @@ export default async function StatisticsPage() {
             <CardTitle className="text-sm font-medium">평균 수료율</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className={`text-2xl font-bold ${overallAvgCompletionRate != null && overallAvgCompletionRate >= 80 ? 'text-green-600' : overallAvgCompletionRate != null && overallAvgCompletionRate >= 50 ? 'text-yellow-600' : 'text-red-600'}`}>
+            <div className={`text-2xl font-bold ${rateColor(overallAvgCompletionRate)}`}>
               {fmt(overallAvgCompletionRate)}
             </div>
-            <p className="text-xs text-muted-foreground">수료인원 / 수강생</p>
+            <p className="text-xs text-muted-foreground">수료인원 ÷ 수강생</p>
           </CardContent>
         </Card>
       </div>
@@ -223,7 +245,7 @@ export default async function StatisticsPage() {
         <CardHeader>
           <CardTitle>구분별 통계</CardTitle>
           <CardDescription>
-            모집률 = 총수강생 ÷ 총정원 × 100 &nbsp;|&nbsp; 평균 수료율 = 수료인원 ÷ 수강생 × 100 (과정별 평균)
+            모집률 = 총수강생 ÷ 총정원 × 100 &nbsp;|&nbsp; 평균 수료율 = 과정별 (수료인원 ÷ 수강생) 평균
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -242,7 +264,7 @@ export default async function StatisticsPage() {
               {statsArray.length === 0 ? (
                 <TableRow>
                   <TableCell colSpan={6} className="h-24 text-center text-muted-foreground">
-                    통계 데이터가 없습니다
+                    해당 기간에 개강한 과정이 없습니다
                   </TableCell>
                 </TableRow>
               ) : (
@@ -254,29 +276,14 @@ export default async function StatisticsPage() {
                       <TableCell className="text-right">{s.totalCapacity.toLocaleString()}명</TableCell>
                       <TableCell className="text-right">{s.totalStudents.toLocaleString()}명</TableCell>
                       <TableCell className="text-right">
-                        <span className={
-                          s.recruitmentRate == null ? 'text-muted-foreground' :
-                          s.recruitmentRate >= 80 ? 'font-semibold text-green-600' :
-                          s.recruitmentRate >= 50 ? 'font-semibold text-yellow-600' :
-                          'font-semibold text-red-600'
-                        }>
-                          {fmt(s.recruitmentRate)}
-                        </span>
+                        <span className={rateColor(s.recruitmentRate)}>{fmt(s.recruitmentRate)}</span>
                       </TableCell>
                       <TableCell className="text-right">
-                        <span className={
-                          s.avgCompletionRate == null ? 'text-muted-foreground' :
-                          s.avgCompletionRate >= 80 ? 'font-semibold text-green-600' :
-                          s.avgCompletionRate >= 50 ? 'font-semibold text-yellow-600' :
-                          'font-semibold text-red-600'
-                        }>
-                          {fmt(s.avgCompletionRate)}
-                        </span>
+                        <span className={rateColor(s.avgCompletionRate)}>{fmt(s.avgCompletionRate)}</span>
                       </TableCell>
                     </TableRow>
                   ))}
-                  {/* 합계 행 */}
-                  <TableRow className="bg-gray-50 font-bold">
+                  <TableRow className="bg-gray-50 font-bold border-t-2">
                     <TableCell>합계</TableCell>
                     <TableCell className="text-right">{totalCourses}개</TableCell>
                     <TableCell className="text-right">{totalCapacity.toLocaleString()}명</TableCell>
@@ -295,7 +302,7 @@ export default async function StatisticsPage() {
       <Card>
         <CardHeader>
           <CardTitle>소분류별 모집률</CardTitle>
-          <CardDescription>소분류 기준 모집률 순위 (총수강생 ÷ 총정원)</CardDescription>
+          <CardDescription>소분류 기준 총수강생 ÷ 총정원 순위</CardDescription>
         </CardHeader>
         <CardContent>
           <Table>
@@ -325,13 +332,7 @@ export default async function StatisticsPage() {
                     <TableCell className="text-right">{s.totalCapacity.toLocaleString()}명</TableCell>
                     <TableCell className="text-right">{s.totalStudents.toLocaleString()}명</TableCell>
                     <TableCell className="text-right">
-                      <span className={
-                        s.recruitmentRate >= 80 ? 'font-bold text-green-600' :
-                        s.recruitmentRate >= 50 ? 'font-bold text-yellow-600' :
-                        'font-bold text-red-600'
-                      }>
-                        {s.recruitmentRate.toFixed(1)}%
-                      </span>
+                      <span className={rateColor(s.recruitmentRate)}>{s.recruitmentRate.toFixed(1)}%</span>
                     </TableCell>
                   </TableRow>
                 ))
@@ -345,7 +346,7 @@ export default async function StatisticsPage() {
       <Card>
         <CardHeader>
           <CardTitle>모집률 상위 과정</CardTitle>
-          <CardDescription>수강생 ÷ 정원으로 계산한 상위 10개 과정</CardDescription>
+          <CardDescription>수강생 ÷ 정원 기준 상위 10개</CardDescription>
         </CardHeader>
         <CardContent>
           <Table>
@@ -375,13 +376,7 @@ export default async function StatisticsPage() {
                     <TableCell className="text-right">{c.capacity}명</TableCell>
                     <TableCell className="text-right">{c.students}명</TableCell>
                     <TableCell className="text-right">
-                      <span className={
-                        c.recruitmentRate >= 80 ? 'font-bold text-green-600' :
-                        c.recruitmentRate >= 50 ? 'font-bold text-yellow-600' :
-                        'font-bold text-red-600'
-                      }>
-                        {c.recruitmentRate.toFixed(1)}%
-                      </span>
+                      <span className={rateColor(c.recruitmentRate)}>{c.recruitmentRate.toFixed(1)}%</span>
                     </TableCell>
                   </TableRow>
                 ))
