@@ -218,20 +218,28 @@ export default function RolloverSurveyPage() {
                           background: COURSE_COLORS[course],
                           textAlign: 'center',
                           width: course === '기타' ? '52px' : '30px',
-                          height: '88px',
-                          padding: '4px 2px',
-                          verticalAlign: 'bottom',
+                          height: '90px',
+                          padding: 0,
+                          verticalAlign: 'middle',
+                          overflow: 'hidden',
                         }}
                       >
                         <div style={{
-                          writingMode: 'vertical-rl',
-                          textOrientation: 'upright',
-                          fontSize: '11px',
-                          fontWeight: 600,
-                          letterSpacing: '-1px',
-                          lineHeight: 1,
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          height: '90px',
                         }}>
-                          {course}
+                          <span style={{
+                            display: 'inline-block',
+                            transform: 'rotate(90deg)',
+                            whiteSpace: 'nowrap',
+                            fontSize: '11px',
+                            fontWeight: 600,
+                            color: '#1e293b',
+                          }}>
+                            {course}
+                          </span>
                         </div>
                       </th>
                     ))}
