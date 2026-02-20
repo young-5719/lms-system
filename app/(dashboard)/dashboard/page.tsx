@@ -11,9 +11,68 @@ const TYPE_LABEL: Record<string, string> = {
 
 const ALL_ROOMS = ['601', '602', '603', '604', '605', '606', '607', '608', '609', '610']
 
-function timeToMinutes(t: string) {
-  const [h, m] = (t || '').split(':').map(Number)
-  return h * 60 + (m || 0)
+// ── 빈강의장 API와 동일한 헬퍼 함수 ─────────────────────────
+
+function timeToMinutes(time: string): number {
+  const [hours, minutes] = (time || '').split(':').map(Number)
+  return hours * 60 + (minutes || 0)
+}
+
+interface SpecialScheduleEntry {
+  startTime: string
+  endTime: string
+  lunchStart: string | null
+  lunchEnd: string | null
+}
+
+function parseSpecialSchedules(scheduleChange: string | null | undefined): Map<string, SpecialScheduleEntry> {
+  const result = new Map<string, SpecialScheduleEntry>()
+  if (!scheduleChange) return result
+  const entries = scheduleChange.split(',').map((e: string) => e.trim()).filter(Boolean)
+  for (const entry of entries) {
+    const match = entry.match(/^(\d{8})=(\d{1,2}:\d{2})~(\d{1,2}:\d{2})(?:\((\d{1,2}:\d{2})~(\d{1,2}:\d{2})\))?/)
+    if (!match) continue
+    const rawDate = match[1]
+    const date = `${rawDate.slice(0, 4)}-${rawDate.slice(4, 6)}-${rawDate.slice(6, 8)}`
+    result.set(date, {
+      startTime: match[2],
+      endTime: match[3],
+      lunchStart: match[4] || null,
+      lunchEnd: match[5] || null,
+    })
+  }
+  return result
+}
+
+function parseLectureDates(lectureDays: string, startDate: string): Set<string> {
+  const dates = new Set<string>()
+  const startYear = parseInt(startDate.slice(0, 4))
+  let currentYear = startYear
+  let prevMonth = 0
+  const sectionRegex = /\((\d+)월\)\s*([\d,\s]+)/g
+  let match
+  while ((match = sectionRegex.exec(lectureDays)) !== null) {
+    const month = parseInt(match[1])
+    if (prevMonth > 0 && month < prevMonth) currentYear++
+    prevMonth = month
+    const days = match[2].split(',').map(d => parseInt(d.trim())).filter(d => d >= 1 && d <= 31)
+    for (const day of days) {
+      dates.add(`${currentYear}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`)
+    }
+  }
+  return dates
+}
+
+function parseDaysOfWeek(daysStr: string | null | undefined): number[] | null {
+  if (!daysStr) return null
+  const s = daysStr.trim()
+  if (/월.?금/.test(s) || s === '평일') return [1, 2, 3, 4, 5]
+  const dayMap: Record<string, number> = { '월': 1, '화': 2, '수': 3, '목': 4, '금': 5, '토': 6, '일': 0 }
+  const days: number[] = []
+  for (const char of s) {
+    if (dayMap[char] !== undefined && !days.includes(dayMap[char])) days.push(dayMap[char])
+  }
+  return days.length > 0 ? days : null
 }
 
 export default async function DashboardPage() {
@@ -21,7 +80,7 @@ export default async function DashboardPage() {
 
   const { data: courses } = await supabase
     .from('courses')
-    .select('room_number, course_name, type, start_date, end_date, instructor, start_time, end_time, is_weekend, capacity, current_students_gov, current_students_gen')
+    .select('room_number, changed_room, change_start_date, course_name, type, start_date, end_date, instructor, start_time, end_time, is_weekend, day_of_week, lecture_days, schedule_change, capacity, current_students_gov, current_students_gen, completion_count')
 
   const now = new Date()
   const today = format(now, 'yyyy-MM-dd')
@@ -42,32 +101,77 @@ export default async function DashboardPage() {
     ongoingByType[t] = (ongoingByType[t] || 0) + 1
   }
 
-  // 2026년 모집률 (오늘 이전 개강 과정)
+  // ── 통계 페이지 동일 로직: 모집률 + 수료율 ────────────────
   const courses2026 = allCourses.filter(c => c.start_date >= '2026-01-01' && c.start_date <= today)
   const totalCapacity = courses2026.reduce((s, c) => s + (c.capacity || 0), 0)
   const totalStudents = courses2026.reduce((s, c) => s + (c.current_students_gov || 0) + (c.current_students_gen || 0), 0)
-  const overallRate = totalCapacity > 0 ? (totalStudents / totalCapacity * 100).toFixed(1) : null
+  const overallRate = totalCapacity > 0
+    ? (totalStudents / totalCapacity * 100).toFixed(1)
+    : null
 
-  // 오늘 19시 이후 강의실 현황
+  const completionCourses = courses2026.filter(c => {
+    const students = (c.current_students_gov || 0) + (c.current_students_gen || 0)
+    return students > 0 && (c.completion_count || 0) > 0
+  })
+  const avgCompletionRate = completionCourses.length > 0
+    ? (completionCourses.reduce((sum, c) => {
+        const students = (c.current_students_gov || 0) + (c.current_students_gen || 0)
+        return sum + ((c.completion_count || 0) / students) * 100
+      }, 0) / completionCourses.length).toFixed(1)
+    : null
+
+  // ── 빈강의장 API 동일 로직: 오늘 19:00 슬롯 강의실 현황 ──
   const eveningOccupied = new Map<string, { courseName: string; instructor: string | null; type: string; startTime: string; endTime: string }>()
+  const eveningSlotStart = timeToMinutes('19:00')
+  const eveningSlotEnd = timeToMinutes('20:00')
+
   for (const course of ongoingCourses) {
     if (course.is_weekend === 'WEEKDAY' && isWeekend) continue
     if (course.is_weekend === 'WEEKEND' && !isWeekend) continue
-    const room = String(course.room_number || '').trim()
-    if (!room || !course.end_time) continue
-    if (timeToMinutes(course.end_time) <= timeToMinutes('19:00')) continue
-    eveningOccupied.set(room, {
-      courseName: course.course_name,
-      instructor: course.instructor,
-      type: course.type,
-      startTime: course.start_time || '',
-      endTime: course.end_time || '',
-    })
+
+    // 오늘 수업 여부 확인 (lecture_days 우선, 없으면 day_of_week)
+    if (course.lecture_days) {
+      const validDates = parseLectureDates(course.lecture_days, course.start_date)
+      if (!validDates.has(today)) continue
+    } else {
+      const courseDays = parseDaysOfWeek(course.day_of_week)
+      if (courseDays && !courseDays.includes(dayOfWeek)) continue
+    }
+
+    // 강의실 변경 반영
+    let actualRoom = String(course.room_number || '').trim()
+    if (course.changed_room && course.change_start_date && today >= course.change_start_date) {
+      actualRoom = String(course.changed_room).trim()
+    }
+    if (!actualRoom || !course.start_time || !course.end_time) continue
+
+    // col61 특별 수업시간 반영
+    const special = parseSpecialSchedules(course.schedule_change).get(today)
+    const courseStart = timeToMinutes(special?.startTime || course.start_time)
+    const courseEnd = timeToMinutes(special?.endTime || course.end_time)
+    const lunchStartMin = special?.lunchStart ? timeToMinutes(special.lunchStart) : null
+    const lunchEndMin = special?.lunchEnd ? timeToMinutes(special.lunchEnd) : null
+
+    let isOccupied = !(courseEnd <= eveningSlotStart || courseStart >= eveningSlotEnd)
+    if (isOccupied && lunchStartMin !== null && lunchEndMin !== null) {
+      if (eveningSlotStart >= lunchStartMin && eveningSlotEnd <= lunchEndMin) isOccupied = false
+    }
+
+    if (isOccupied) {
+      eveningOccupied.set(actualRoom, {
+        courseName: course.course_name,
+        instructor: course.instructor,
+        type: course.type,
+        startTime: special?.startTime || course.start_time || '',
+        endTime: special?.endTime || course.end_time || '',
+      })
+    }
   }
+
   const emptyRooms = ALL_ROOMS.filter(r => !eveningOccupied.has(r))
   const usedRooms = ALL_ROOMS.filter(r => eveningOccupied.has(r))
 
-  // 강사 수 (2026년 과정)
+  // 강사 수 (2026년)
   const instructorSet = new Set(
     allCourses
       .filter(c => c.start_date >= '2026-01-01' && c.start_date <= '2026-12-31')
@@ -92,7 +196,7 @@ export default async function DashboardPage() {
       </div>
 
       {/* 요약 통계 */}
-      <div className="grid gap-4 md:grid-cols-4">
+      <div className="grid gap-4 md:grid-cols-5">
         <Card>
           <CardHeader className="pb-2">
             <CardTitle className="text-sm font-medium text-muted-foreground">전체 과정</CardTitle>
@@ -120,6 +224,17 @@ export default async function DashboardPage() {
               {overallRate != null ? `${overallRate}%` : '-'}
             </div>
             <p className="text-xs text-muted-foreground mt-1">총수강생 ÷ 총정원</p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm font-medium text-muted-foreground">평균 수료율</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className={`text-3xl font-bold ${rateColor(avgCompletionRate)}`}>
+              {avgCompletionRate != null ? `${avgCompletionRate}%` : '-'}
+            </div>
+            <p className="text-xs text-muted-foreground mt-1">수료인원 ÷ 수강생 평균</p>
           </CardContent>
         </Card>
         <Card>
@@ -317,11 +432,19 @@ export default async function DashboardPage() {
                 </div>
               </CardHeader>
               <CardContent>
-                <div className="flex items-baseline gap-1">
-                  <span className={`text-2xl font-bold ${rateColor(overallRate)}`}>
-                    {overallRate != null ? `${overallRate}%` : '-'}
-                  </span>
-                  <span className="text-sm text-muted-foreground">전체 모집률</span>
+                <div className="flex gap-4">
+                  <div>
+                    <div className={`text-xl font-bold ${rateColor(overallRate)}`}>
+                      {overallRate != null ? `${overallRate}%` : '-'}
+                    </div>
+                    <p className="text-xs text-muted-foreground">모집률</p>
+                  </div>
+                  <div>
+                    <div className={`text-xl font-bold ${rateColor(avgCompletionRate)}`}>
+                      {avgCompletionRate != null ? `${avgCompletionRate}%` : '-'}
+                    </div>
+                    <p className="text-xs text-muted-foreground">수료율</p>
+                  </div>
                 </div>
                 <p className="text-xs text-muted-foreground mt-2">개강일 기준 조회 기간 설정 가능</p>
               </CardContent>
