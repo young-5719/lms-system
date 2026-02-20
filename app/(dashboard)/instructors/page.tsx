@@ -3,6 +3,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from '@/components/ui/table'
+import ExportButton from '@/components/instructors/ExportButton'
 
 const TYPE_LABEL: Record<string, string> = {
   GENERAL: '일반', EMPLOYED: '재직자', UNEMPLOYED: '실업자',
@@ -225,11 +226,14 @@ export default async function InstructorsPage() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h2 className="text-3xl font-bold tracking-tight">강사별 수업시간</h2>
-        <p className="text-muted-foreground">
-          2026년 재직자·일반·실업자 과정 대상, 일정변경·취업특강 반영
-        </p>
+      <div className="flex items-start justify-between">
+        <div>
+          <h2 className="text-3xl font-bold tracking-tight">강사별 수업시간</h2>
+          <p className="text-muted-foreground">
+            2026년 재직자·일반·실업자 과정 대상, 일정변경·취업특강 반영
+          </p>
+        </div>
+        <ExportButton />
       </div>
 
       {/* 요약 카드 */}
