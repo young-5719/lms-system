@@ -65,6 +65,33 @@ function parseDaysOfWeek(daysStr: string | null | undefined): number[] | null {
   return days.length > 0 ? days : null
 }
 
+// col61 특별 수업시간 파싱: "20241005=09:00~18:00(12:00~13:00), 20241006=10:00~14:00"
+interface SpecialScheduleEntry {
+  startTime: string
+  endTime: string
+  lunchStart: string | null
+  lunchEnd: string | null
+}
+
+function parseSpecialSchedules(scheduleChange: string | null | undefined): Map<string, SpecialScheduleEntry> {
+  const result = new Map<string, SpecialScheduleEntry>()
+  if (!scheduleChange) return result
+  const entries = scheduleChange.split(',').map(e => e.trim()).filter(Boolean)
+  for (const entry of entries) {
+    const match = entry.match(/^(\d{8})=(\d{1,2}:\d{2})~(\d{1,2}:\d{2})(?:\((\d{1,2}:\d{2})~(\d{1,2}:\d{2})\))?/)
+    if (!match) continue
+    const rawDate = match[1]
+    const date = `${rawDate.slice(0, 4)}-${rawDate.slice(4, 6)}-${rawDate.slice(6, 8)}`
+    result.set(date, {
+      startTime: match[2],
+      endTime: match[3],
+      lunchStart: match[4] || null,
+      lunchEnd: match[5] || null,
+    })
+  }
+  return result
+}
+
 export default async function SchedulePage() {
   const supabase = await createClient()
 
@@ -84,13 +111,13 @@ export default async function SchedulePage() {
       const startDate = parseISO(course.start_date)
       const endDate = parseISO(course.end_date)
 
-      // 시작 시간으로 야간 여부 판단 (19:00 이후)
-      const isEvening = course.start_time ? course.start_time >= '19:00' : false
-
       // lecture_days 미리 파싱 (있는 경우)
       const lectureDateSet = course.lecture_days
         ? parseLectureDates(course.lecture_days, course.start_date)
         : null
+
+      // col61 특별 수업시간 파싱
+      const specialScheduleMap = parseSpecialSchedules(course.schedule_change)
 
       // 과정 기간 내의 모든 날짜에 대해 스케줄 생성
       let currentDate = startDate
@@ -131,21 +158,28 @@ export default async function SchedulePage() {
             room = course.changed_room
           }
 
+          // 특별 수업시간 적용 (col61)
+          const special = specialScheduleMap.get(dateStr)
+          const startTime = special?.startTime || course.start_time || '09:00'
+          const endTime = special?.endTime || course.end_time || '18:00'
+          const isEvening = startTime >= '19:00'
+
           let notes = ''
           if (course.changed_room && course.change_start_date && dateStr >= course.change_start_date
               && course.changed_room !== course.room_number) {
             notes = `${course.room_number} → ${course.changed_room}`
           }
-          if (course.schedule_change) {
-            notes += (notes ? ' | ' : '') + course.schedule_change
+          if (special) {
+            const lunchNote = special.lunchStart && special.lunchEnd
+              ? ` (점심 ${special.lunchStart}~${special.lunchEnd})`
+              : ''
+            notes += (notes ? ' | ' : '') + `특별시간: ${startTime}~${endTime}${lunchNote}`
           }
 
           scheduleList.push({
             date: dateStr,
             dayOfWeek: format(currentDate, 'EEE', { locale: ko }),
-            time: course.start_time && course.end_time
-              ? `${course.start_time}-${course.end_time}`
-              : '-',
+            time: `${startTime}-${endTime}`,
             room,
             courseName: course.course_name || '-',
             instructor: course.instructor || '-',

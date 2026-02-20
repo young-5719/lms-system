@@ -43,7 +43,7 @@ export async function GET(request: NextRequest) {
     // 해당 날짜에 진행 중인 과정 조회
     const { data: courses } = await supabase
       .from('courses')
-      .select('room_number, changed_room, change_start_date, start_time, end_time, is_weekend, course_name, instructor, type, day_of_week, lecture_days, start_date')
+      .select('room_number, changed_room, change_start_date, start_time, end_time, is_weekend, course_name, instructor, type, day_of_week, lecture_days, start_date, schedule_change')
       .lte('start_date', date)
       .gte('end_date', date)
 
@@ -80,13 +80,22 @@ export async function GET(request: NextRequest) {
         }
         if (!actualRoom || !course.start_time || !course.end_time) continue
 
-        const courseStart = timeToMinutes(course.start_time)
-        const courseEnd = timeToMinutes(course.end_time)
+        // col61 특별 수업시간 적용
+        const special = parseSpecialSchedules(course.schedule_change).get(date)
+        const courseStart = timeToMinutes(special?.startTime || course.start_time)
+        const courseEnd = timeToMinutes(special?.endTime || course.end_time)
+        const lunchStartMin = special?.lunchStart ? timeToMinutes(special.lunchStart) : null
+        const lunchEndMin = special?.lunchEnd ? timeToMinutes(special.lunchEnd) : null
 
         for (const slot of TIME_SLOTS) {
           const slotStart = timeToMinutes(slot.start)
           const slotEnd = timeToMinutes(slot.end)
-          const isOverlapping = !(courseEnd <= slotStart || courseStart >= slotEnd)
+          let isOverlapping = !(courseEnd <= slotStart || courseStart >= slotEnd)
+
+          // 점심시간 구간은 빈 강의실로 처리
+          if (isOverlapping && lunchStartMin !== null && lunchEndMin !== null) {
+            if (slotStart >= lunchStartMin && slotEnd <= lunchEndMin) isOverlapping = false
+          }
 
           if (isOverlapping && matrix[actualRoom]) {
             matrix[actualRoom][slot.start] = {
@@ -184,6 +193,33 @@ export async function POST(request: NextRequest) {
 function timeToMinutes(time: string): number {
   const [hours, minutes] = time.split(':').map(Number)
   return hours * 60 + (minutes || 0)
+}
+
+// col61 특별 수업시간 파싱: "20241005=09:00~18:00(12:00~13:00), 20241006=10:00~14:00"
+interface SpecialScheduleEntry {
+  startTime: string
+  endTime: string
+  lunchStart: string | null
+  lunchEnd: string | null
+}
+
+function parseSpecialSchedules(scheduleChange: string | null | undefined): Map<string, SpecialScheduleEntry> {
+  const result = new Map<string, SpecialScheduleEntry>()
+  if (!scheduleChange) return result
+  const entries = scheduleChange.split(',').map((e: string) => e.trim()).filter(Boolean)
+  for (const entry of entries) {
+    const match = entry.match(/^(\d{8})=(\d{1,2}:\d{2})~(\d{1,2}:\d{2})(?:\((\d{1,2}:\d{2})~(\d{1,2}:\d{2})\))?/)
+    if (!match) continue
+    const rawDate = match[1]
+    const date = `${rawDate.slice(0, 4)}-${rawDate.slice(4, 6)}-${rawDate.slice(6, 8)}`
+    result.set(date, {
+      startTime: match[2],
+      endTime: match[3],
+      lunchStart: match[4] || null,
+      lunchEnd: match[5] || null,
+    })
+  }
+  return result
 }
 
 // lecture_days 파싱: "(1월) 5, 7, 9...(2월) 2, 4..." → Set<"yyyy-MM-dd">
