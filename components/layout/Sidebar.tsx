@@ -13,6 +13,7 @@ const NAV_ITEMS = [
   { href: '/statistics', label: '통계', icon: '📈' },
   { href: '/competitors', label: '경쟁기관', icon: '🔍' },
   { href: '/rollover-survey', label: '이월희망조사표', icon: '📝' },
+  { href: '/revenue', label: '국비지원 예상매출', icon: '💰' },
 ]
 
 export default function Sidebar() {

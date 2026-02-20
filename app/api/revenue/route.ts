@@ -1,0 +1,285 @@
+import { NextRequest, NextResponse } from 'next/server'
+import { createClient } from '@/lib/supabase/server'
+import { KOREAN_HOLIDAYS } from '@/lib/holidays'
+
+const TYPE_MULTIPLIER: Record<string, number> = {
+  NATIONAL: 0.95,
+  UNEMPLOYED: 0.70,
+  EMPLOYED: 0.60,
+}
+
+export async function GET(request: NextRequest) {
+  try {
+    const supabase = await createClient()
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+
+    const { searchParams } = new URL(request.url)
+    const year = parseInt(searchParams.get('year') || String(new Date().getFullYear()))
+
+    const yearStart = `${year}-01-01`
+    const yearEnd = `${year}-12-31`
+
+    const { data: courses, error } = await supabase
+      .from('courses')
+      .select(
+        'training_id, course_name, type, instructor, start_date, end_date, start_time, end_time, daily_hours, tuition, current_students_gov, day_of_week, lecture_days, holidays, is_weekend'
+      )
+      .in('type', ['NATIONAL', 'UNEMPLOYED', 'EMPLOYED'])
+      .lte('start_date', yearEnd)
+      .gte('end_date', yearStart)
+
+    if (error) throw error
+
+    const unitPeriods = generateUnitPeriods(year)
+
+    const periods = unitPeriods.map((period) => {
+      const courseRevenues: CourseRevenue[] = []
+
+      for (const course of courses || []) {
+        const tuition = course.tuition || 0
+        const students = course.current_students_gov || 0
+        if (tuition === 0 || students === 0) continue
+
+        const trainingDays = countTrainingDays(course, period.start, period.end)
+        if (trainingDays === 0) continue
+
+        const dailyHours = course.daily_hours || calcDailyHours(course.start_time, course.end_time)
+        if (dailyHours <= 0) continue
+
+        const multiplier = TYPE_MULTIPLIER[course.type] ?? 1
+        const revenue = Math.round(trainingDays * dailyHours * tuition * students * multiplier)
+
+        courseRevenues.push({
+          trainingId: course.training_id,
+          courseName: course.course_name,
+          instructor: course.instructor || '',
+          type: course.type,
+          startDate: course.start_date,
+          endDate: course.end_date,
+          trainingDays,
+          dailyHours,
+          tuition,
+          students,
+          multiplier,
+          revenue,
+        })
+      }
+
+      const totalByType = {
+        NATIONAL: courseRevenues.filter((c) => c.type === 'NATIONAL').reduce((s, c) => s + c.revenue, 0),
+        UNEMPLOYED: courseRevenues.filter((c) => c.type === 'UNEMPLOYED').reduce((s, c) => s + c.revenue, 0),
+        EMPLOYED: courseRevenues.filter((c) => c.type === 'EMPLOYED').reduce((s, c) => s + c.revenue, 0),
+      }
+
+      return {
+        ...period,
+        courses: courseRevenues,
+        totalByType,
+        total: Object.values(totalByType).reduce((a, b) => a + b, 0),
+      }
+    })
+
+    // 연간 합계
+    const annualByType = {
+      NATIONAL: periods.reduce((s, p) => s + p.totalByType.NATIONAL, 0),
+      UNEMPLOYED: periods.reduce((s, p) => s + p.totalByType.UNEMPLOYED, 0),
+      EMPLOYED: periods.reduce((s, p) => s + p.totalByType.EMPLOYED, 0),
+    }
+
+    return NextResponse.json({
+      year,
+      periods,
+      annualByType,
+      annualTotal: Object.values(annualByType).reduce((a, b) => a + b, 0),
+    })
+  } catch (error) {
+    console.error('Revenue API error:', error)
+    return NextResponse.json({ error: 'Failed to calculate revenue' }, { status: 500 })
+  }
+}
+
+// ── Types ─────────────────────────────────────────────────────────────────────
+
+interface CourseRevenue {
+  trainingId: number
+  courseName: string
+  instructor: string
+  type: string
+  startDate: string
+  endDate: string
+  trainingDays: number
+  dailyHours: number
+  tuition: number
+  students: number
+  multiplier: number
+  revenue: number
+}
+
+// ── Unit Period Generation ─────────────────────────────────────────────────────
+
+function generateUnitPeriods(year: number) {
+  const periods = []
+  for (let month = 1; month <= 12; month++) {
+    const mm = String(month).padStart(2, '0')
+    const lastDay = new Date(year, month, 0).getDate()
+    const nextMonth = month === 12 ? 1 : month + 1
+    const nextYear = month === 12 ? year + 1 : year
+    const nm = String(nextMonth).padStart(2, '0')
+    const ny = nextYear
+
+    // 상반월: 1일~15일, 지급일 다음달 5일
+    periods.push({
+      id: `${year}-${mm}-1`,
+      label: `${year}년 ${month}월 1~15일`,
+      start: `${year}-${mm}-01`,
+      end: `${year}-${mm}-15`,
+      paymentDate: `${ny}-${nm}-05`,
+      month,
+      half: 1,
+    })
+
+    // 하반월: 16일~말일, 지급일 다음달 20일
+    periods.push({
+      id: `${year}-${mm}-2`,
+      label: `${year}년 ${month}월 16~${lastDay}일`,
+      start: `${year}-${mm}-16`,
+      end: `${year}-${mm}-${String(lastDay).padStart(2, '0')}`,
+      paymentDate: `${ny}-${nm}-20`,
+      month,
+      half: 2,
+    })
+  }
+  return periods
+}
+
+// ── Training Day Count ─────────────────────────────────────────────────────────
+
+function countTrainingDays(
+  course: {
+    start_date: string
+    end_date: string
+    lecture_days: string | null
+    day_of_week: string | null
+    holidays: string | null
+    is_weekend: string
+  },
+  periodStart: string,
+  periodEnd: string
+): number {
+  // 단위기간을 과정 기간으로 클램프
+  const effectiveStart = periodStart > course.start_date ? periodStart : course.start_date
+  const effectiveEnd = periodEnd < course.end_date ? periodEnd : course.end_date
+  if (effectiveStart > effectiveEnd) return 0
+
+  const holidaySet = parseHolidayDates(course.holidays || '')
+
+  // lecture_days(col38)가 있으면 실제 수업일 기준
+  if (course.lecture_days) {
+    const lectureSet = parseLectureDates(course.lecture_days, course.start_date)
+    let count = 0
+    for (const d of lectureSet) {
+      if (d >= effectiveStart && d <= effectiveEnd && !holidaySet.has(d) && !KOREAN_HOLIDAYS[d]) {
+        count++
+      }
+    }
+    return count
+  }
+
+  // lecture_days 없으면 요일 패턴으로 계산
+  let courseDays: number[] | null = parseDaysOfWeek(course.day_of_week)
+  if (!courseDays) {
+    if (course.is_weekend === 'WEEKEND') {
+      courseDays = [new Date(course.start_date + 'T00:00:00').getDay()]
+    } else {
+      courseDays = [1, 2, 3, 4, 5]
+    }
+  }
+
+  let count = 0
+  const cur = new Date(effectiveStart + 'T00:00:00')
+  const end = new Date(effectiveEnd + 'T00:00:00')
+  while (cur <= end) {
+    const y = cur.getFullYear()
+    const mo = String(cur.getMonth() + 1).padStart(2, '0')
+    const d = String(cur.getDate()).padStart(2, '0')
+    const dateStr = `${y}-${mo}-${d}`
+    if (courseDays.includes(cur.getDay()) && !holidaySet.has(dateStr) && !KOREAN_HOLIDAYS[dateStr]) {
+      count++
+    }
+    cur.setDate(cur.getDate() + 1)
+  }
+  return count
+}
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+
+function calcDailyHours(startTime: string | null, endTime: string | null): number {
+  if (!startTime || !endTime) return 0
+  const [sh, sm] = startTime.split(':').map(Number)
+  const [eh, em] = endTime.split(':').map(Number)
+  const totalMin = (eh * 60 + em) - (sh * 60 + sm)
+  // 6시간 이상이면 점심 1시간 차감
+  const lunchMin = totalMin >= 360 ? 60 : 0
+  return (totalMin - lunchMin) / 60
+}
+
+/** 과정별 휴강일 파싱: "26/1/31(토)" 또는 JS Date string 형식 모두 처리 */
+function parseHolidayDates(holidaysStr: string): Set<string> {
+  const dates = new Set<string>()
+  if (!holidaysStr) return dates
+
+  // Format 1: YY/M/DD (e.g., "26/1/31(토)")
+  const regex1 = /(\d{2})\/(\d{1,2})\/(\d{1,2})/g
+  let m: RegExpExecArray | null
+  while ((m = regex1.exec(holidaysStr)) !== null) {
+    const year = 2000 + parseInt(m[1])
+    dates.add(`${year}-${String(parseInt(m[2])).padStart(2, '0')}-${String(parseInt(m[3])).padStart(2, '0')}`)
+  }
+
+  // Format 2: JS Date string (e.g., "Sat Feb 14 2026 00:00:00 GMT+0900...")
+  const monthMap: Record<string, string> = {
+    Jan: '01', Feb: '02', Mar: '03', Apr: '04', May: '05', Jun: '06',
+    Jul: '07', Aug: '08', Sep: '09', Oct: '10', Nov: '11', Dec: '12',
+  }
+  const regex2 = /(?:Sun|Mon|Tue|Wed|Thu|Fri|Sat)\s+(\w{3})\s+(\d{1,2})\s+(\d{4})/g
+  while ((m = regex2.exec(holidaysStr)) !== null) {
+    const month = monthMap[m[1]]
+    if (month) dates.add(`${m[3]}-${month}-${String(parseInt(m[2])).padStart(2, '0')}`)
+  }
+
+  return dates
+}
+
+/** lecture_days 파싱: "(2월) 24, 26, 27\n(3월) 3, 5..." → Set<"yyyy-MM-dd"> */
+function parseLectureDates(lectureDays: string, startDate: string): Set<string> {
+  const dates = new Set<string>()
+  const startYear = parseInt(startDate.slice(0, 4))
+  let currentYear = startYear
+  let prevMonth = 0
+  const regex = /\((\d+)월\)\s*([\d,\s]+)/g
+  let match: RegExpExecArray | null
+  while ((match = regex.exec(lectureDays)) !== null) {
+    const month = parseInt(match[1])
+    if (prevMonth > 0 && month < prevMonth) currentYear++
+    prevMonth = month
+    const days = match[2].split(',').map((d) => parseInt(d.trim())).filter((d) => d >= 1 && d <= 31)
+    for (const day of days) {
+      dates.add(`${currentYear}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`)
+    }
+  }
+  return dates
+}
+
+/** 한국어 요일 문자열 → JS getDay() 배열 */
+function parseDaysOfWeek(daysStr: string | null | undefined): number[] | null {
+  if (!daysStr) return null
+  const s = daysStr.trim()
+  if (/월.?금/.test(s) || s === '평일') return [1, 2, 3, 4, 5]
+  const dayMap: Record<string, number> = { '월': 1, '화': 2, '수': 3, '목': 4, '금': 5, '토': 6, '일': 0 }
+  const days: number[] = []
+  for (const char of s) {
+    if (dayMap[char] !== undefined && !days.includes(dayMap[char])) days.push(dayMap[char])
+  }
+  return days.length > 0 ? days : null
+}
