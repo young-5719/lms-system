@@ -195,7 +195,7 @@ export default function RevenuePage() {
         <>
           {/* 안내 문구 */}
           <div className="text-xs text-gray-500 bg-blue-50 border border-blue-200 rounded-lg px-4 py-2">
-            기준일 <strong>{today}</strong> 현재 운영 중인 과정 기준 ·
+            {year}년 단위기간에 수업이 있는 과정 전체 기준 ·
             계산식: 훈련비 × (단위기간 수업일수 / 전체 수업일수) × 인원 × 지원율
           </div>
 

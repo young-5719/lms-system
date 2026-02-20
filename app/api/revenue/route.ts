@@ -16,9 +16,11 @@ export async function GET(request: NextRequest) {
 
     const { searchParams } = new URL(request.url)
     const year = parseInt(searchParams.get('year') || String(new Date().getFullYear()))
-
-    // 현재 운영중인 과정만 조회 (오늘 날짜 기준)
     const today = new Date().toISOString().slice(0, 10)
+
+    // 선택 연도의 단위기간에 수업이 있는 과정 전체 조회
+    const yearStart = `${year}-01-01`
+    const yearEnd = `${year}-12-31`
 
     const { data: courses, error } = await supabase
       .from('courses')
@@ -26,8 +28,8 @@ export async function GET(request: NextRequest) {
         'training_id, course_name, type, instructor, start_date, end_date, tuition, current_students_gov, capacity, day_of_week, lecture_days, holidays, is_weekend'
       )
       .in('type', ['NATIONAL', 'UNEMPLOYED', 'EMPLOYED'])
-      .lte('start_date', today)   // 이미 시작한 과정
-      .gte('end_date', today)      // 아직 종료되지 않은 과정
+      .lte('start_date', yearEnd)   // 해당 연도 내에 시작한 과정
+      .gte('end_date', yearStart)   // 해당 연도 내에 수업이 있는 과정
 
     if (error) throw error
 
