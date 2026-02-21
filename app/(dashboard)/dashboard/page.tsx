@@ -27,6 +27,19 @@ export default async function DashboardPage() {
   const in3days = format(in3Date, 'yyyy-MM-dd')
   const tomorrow = format(tomorrowDate, 'yyyy-MM-dd')
 
+  // 전월 / 전전월 날짜
+  const prevMonthFirst = new Date(now.getFullYear(), now.getMonth() - 1, 1)
+  const prevMonthLast = new Date(now.getFullYear(), now.getMonth(), 0)
+  const prevMonthStart = format(prevMonthFirst, 'yyyy-MM-dd')
+  const prevMonthEnd = format(prevMonthLast, 'yyyy-MM-dd')
+  const prevMonthLabel = format(prevMonthFirst, 'M월')
+
+  const prevPrevMonthFirst = new Date(now.getFullYear(), now.getMonth() - 2, 1)
+  const prevPrevMonthLast = new Date(now.getFullYear(), now.getMonth() - 1, 0)
+  const prevPrevMonthStart = format(prevPrevMonthFirst, 'yyyy-MM-dd')
+  const prevPrevMonthEnd = format(prevPrevMonthLast, 'yyyy-MM-dd')
+  const prevPrevMonthLabel = format(prevPrevMonthFirst, 'M월')
+
   // 기본 집계용 과정 데이터
   const { data: courses } = await supabase
     .from('courses')
@@ -81,17 +94,25 @@ export default async function DashboardPage() {
   const cookieHeader = cookieStore.getAll().map(c => `${c.name}=${c.value}`).join('; ')
   const fetchOpts = { headers: { cookie: cookieHeader }, cache: 'no-store' } as const
 
-  // ── 통계 API 호출 (statistics/page.tsx 와 동일한 계산) ──────
-  let overallRate: number | null = null
-  let avgCompletionRate: number | null = null
+  // ── 전월 / 전전월 통계 병렬 호출 ─────────────────────────────
+  let prevMonthRate: number | null = null
+  let prevMonthCompletion: number | null = null
+  let prevPrevMonthRate: number | null = null
+  let prevPrevMonthCompletion: number | null = null
   try {
-    const res = await fetch(`${baseUrl}/api/statistics?from=2026-01-01&to=${today}`, fetchOpts)
-    if (res.ok) {
-      const d = await res.json()
-      overallRate = d.overallRate
-      avgCompletionRate = d.avgCompletionRate
-    }
+    const [r1, r2] = await Promise.all([
+      fetch(`${baseUrl}/api/statistics?from=${prevMonthStart}&to=${prevMonthEnd}`, fetchOpts),
+      fetch(`${baseUrl}/api/statistics?from=${prevPrevMonthStart}&to=${prevPrevMonthEnd}`, fetchOpts),
+    ])
+    if (r1.ok) { const d = await r1.json(); prevMonthRate = d.overallRate; prevMonthCompletion = d.avgCompletionRate }
+    if (r2.ok) { const d = await r2.json(); prevPrevMonthRate = d.overallRate; prevPrevMonthCompletion = d.avgCompletionRate }
   } catch { /* 조용히 실패 */ }
+
+  // 전전월 대비 증감
+  const rateDiff = prevMonthRate != null && prevPrevMonthRate != null ? prevMonthRate - prevPrevMonthRate : null
+  const completionDiff = prevMonthCompletion != null && prevPrevMonthCompletion != null ? prevMonthCompletion - prevPrevMonthCompletion : null
+  const fmtDiff = (d: number | null) => d == null ? null : (d >= 0 ? `+${d.toFixed(1)}%p` : `${d.toFixed(1)}%p`)
+  const diffColor = (d: number | null) => d == null ? '' : d >= 0 ? 'text-green-600' : 'text-red-500'
 
   // ── 빈강의장 API 호출 (empty-rooms 페이지와 동일한 계산) ────
   type SlotInfo = { occupied: boolean; courseName?: string; instructor?: string; type?: string }
@@ -284,24 +305,38 @@ export default async function DashboardPage() {
         </Card>
         <Card>
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">2026년 모집률</CardTitle>
+            <CardTitle className="text-sm font-medium text-muted-foreground">{prevMonthLabel} 모집률</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className={`text-3xl font-bold ${rateColor(overallRate)}`}>
-              {fmtRate(overallRate)}
+            <div className="flex items-baseline gap-2">
+              <div className={`text-3xl font-bold ${rateColor(prevMonthRate)}`}>
+                {fmtRate(prevMonthRate)}
+              </div>
+              {rateDiff != null && (
+                <span className={`text-xs font-semibold ${diffColor(rateDiff)}`}>
+                  {fmtDiff(rateDiff)}
+                </span>
+              )}
             </div>
-            <p className="text-xs text-muted-foreground mt-1">총수강생 ÷ 총정원</p>
+            <p className="text-xs text-muted-foreground mt-1">{prevPrevMonthLabel} 대비 · 개강일 기준</p>
           </CardContent>
         </Card>
         <Card>
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">평균 수료율</CardTitle>
+            <CardTitle className="text-sm font-medium text-muted-foreground">{prevMonthLabel} 수료율</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className={`text-3xl font-bold ${rateColor(avgCompletionRate)}`}>
-              {fmtRate(avgCompletionRate)}
+            <div className="flex items-baseline gap-2">
+              <div className={`text-3xl font-bold ${rateColor(prevMonthCompletion)}`}>
+                {fmtRate(prevMonthCompletion)}
+              </div>
+              {completionDiff != null && (
+                <span className={`text-xs font-semibold ${diffColor(completionDiff)}`}>
+                  {fmtDiff(completionDiff)}
+                </span>
+              )}
             </div>
-            <p className="text-xs text-muted-foreground mt-1">수료인원 ÷ 수강생 평균</p>
+            <p className="text-xs text-muted-foreground mt-1">{prevPrevMonthLabel} 대비 · 수료인원 ÷ 수강생</p>
           </CardContent>
         </Card>
         <Card>
@@ -548,12 +583,12 @@ export default async function DashboardPage() {
               <CardContent>
                 <div className="flex gap-4">
                   <div>
-                    <div className={`text-xl font-bold ${rateColor(overallRate)}`}>{fmtRate(overallRate)}</div>
-                    <p className="text-xs text-muted-foreground">모집률</p>
+                    <div className={`text-xl font-bold ${rateColor(prevMonthRate)}`}>{fmtRate(prevMonthRate)}</div>
+                    <p className="text-xs text-muted-foreground">{prevMonthLabel} 모집률</p>
                   </div>
                   <div>
-                    <div className={`text-xl font-bold ${rateColor(avgCompletionRate)}`}>{fmtRate(avgCompletionRate)}</div>
-                    <p className="text-xs text-muted-foreground">수료율</p>
+                    <div className={`text-xl font-bold ${rateColor(prevMonthCompletion)}`}>{fmtRate(prevMonthCompletion)}</div>
+                    <p className="text-xs text-muted-foreground">{prevMonthLabel} 수료율</p>
                   </div>
                 </div>
                 <p className="text-xs text-muted-foreground mt-2">개강일 기준 조회 기간 설정 가능</p>
