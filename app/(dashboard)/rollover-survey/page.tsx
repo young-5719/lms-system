@@ -7,38 +7,25 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 
 const ROLLOVER_COURSES = [
-  '회계1급',
-  '세무2급',
-  '세무1급',
-  '포토샵',
-  '일러스트',
-  '영상편집',
-  '웹코딩',
-  '피그마',
-  '캐드',
-  '스케치업',
-  '블렌더',
-  '블렌더(고급)',
-  'IT자격증',
-  '기타',
+  '회계1급', '세무2급', '세무1급', '포토샵', '일러스트', '영상편집',
+  '웹코딩', '피그마', '캐드', '스케치업', '블렌더', '블렌더(고급)', 'IT자격증', '기타',
 ]
 
-// 과목 카테고리별 색상
 const COURSE_COLORS: Record<string, string> = {
-  '회계1급':   '#dbeafe', // blue-100
-  '세무2급':   '#dbeafe',
-  '세무1급':   '#dbeafe',
-  '포토샵':    '#fce7f3', // pink-100
-  '일러스트':  '#fce7f3',
-  '영상편집':  '#fce7f3',
-  '웹코딩':    '#dcfce7', // green-100
-  '피그마':    '#dcfce7',
-  '캐드':      '#fef9c3', // yellow-100
-  '스케치업':  '#fef9c3',
-  '블렌더':    '#ede9fe', // violet-100
+  '회계1급':      '#dbeafe',
+  '세무2급':      '#dbeafe',
+  '세무1급':      '#dbeafe',
+  '포토샵':       '#fce7f3',
+  '일러스트':     '#fce7f3',
+  '영상편집':     '#fce7f3',
+  '웹코딩':       '#dcfce7',
+  '피그마':       '#dcfce7',
+  '캐드':         '#fef9c3',
+  '스케치업':     '#fef9c3',
+  '블렌더':       '#ede9fe',
   '블렌더(고급)': '#ede9fe',
-  'IT자격증':  '#ffedd5', // orange-100
-  '기타':      '#f3f4f6', // gray-100
+  'IT자격증':     '#ffedd5',
+  '기타':         '#f3f4f6',
 }
 
 interface CourseInfo {
@@ -76,6 +63,8 @@ function daysUntil(dateStr: string): number {
   return Math.round((end.getTime() - today.getTime()) / (1000 * 60 * 60 * 24))
 }
 
+const TOTAL_ROWS = 20
+
 export default function RolloverSurveyPage() {
   const [trainingIdInput, setTrainingIdInput] = useState('')
   const [loading, setLoading] = useState(false)
@@ -103,14 +92,15 @@ export default function RolloverSurveyPage() {
       if (!res.ok) throw new Error(data.error || '조회 실패')
       setCourseInfo(data.course)
       setStudents(data.students)
-    } catch (e: any) {
-      setError(e.message)
+    } catch (e: unknown) {
+      setError((e as Error).message)
     } finally {
       setLoading(false)
     }
   }
 
   const today = new Date().toLocaleDateString('ko-KR', { year: 'numeric', month: 'long', day: 'numeric' })
+  const emptyRowCount = Math.max(0, TOTAL_ROWS - students.length)
 
   return (
     <div className="space-y-6">
@@ -205,44 +195,46 @@ export default function RolloverSurveyPage() {
         <div className="print-area">
 
           {/* 제목 */}
-          <div style={{ textAlign: 'center', marginBottom: '20px' }}>
-            <div style={{
-              display: 'inline-block',
-              background: '#1e3a5f',
-              color: 'white',
-              padding: '8px 40px',
-              borderRadius: '4px',
-              fontSize: '20px',
-              fontWeight: 'bold',
-              letterSpacing: '4px',
-            }}>
-              이월 희망 조사표
+          <div className="print-title-section">
+            <div style={{ textAlign: 'center' }}>
+              <div style={{
+                display: 'inline-block',
+                background: '#1e3a5f',
+                color: 'white',
+                padding: '6px 36px',
+                borderRadius: '4px',
+                fontSize: '18px',
+                fontWeight: 'bold',
+                letterSpacing: '4px',
+              }}>
+                이월 희망 조사표
+              </div>
+              <div style={{ fontSize: '11px', color: '#6b7280', marginTop: '4px' }}>작성일: {today}</div>
             </div>
-            <div style={{ fontSize: '12px', color: '#6b7280', marginTop: '6px' }}>작성일: {today}</div>
           </div>
 
           {/* 과정 정보 */}
-          <table style={{ width: '100%', borderCollapse: 'collapse', marginBottom: '16px', fontSize: '13px' }}>
+          <table className="print-info-table" style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px' }}>
             <tbody>
               <tr>
-                <th style={{ background: '#1e3a5f', color: 'white', border: '1px solid #94a3b8', padding: '7px 12px', textAlign: 'left', whiteSpace: 'nowrap', width: '80px' }}>
+                <th style={{ background: '#1e3a5f', color: 'white', border: '1px solid #94a3b8', padding: '5px 10px', textAlign: 'left', whiteSpace: 'nowrap', width: '72px' }}>
                   훈련과정
                 </th>
-                <td style={{ border: '1px solid #94a3b8', padding: '7px 12px', fontWeight: 600, background: 'white' }}>
+                <td style={{ border: '1px solid #94a3b8', padding: '5px 10px', fontWeight: 600, background: 'white' }}>
                   {courseInfo.courseName}
                 </td>
-                <th style={{ background: '#1e3a5f', color: 'white', border: '1px solid #94a3b8', padding: '7px 12px', textAlign: 'left', whiteSpace: 'nowrap', width: '80px' }}>
+                <th style={{ background: '#1e3a5f', color: 'white', border: '1px solid #94a3b8', padding: '5px 10px', textAlign: 'left', whiteSpace: 'nowrap', width: '72px' }}>
                   담당강사
                 </th>
-                <td style={{ border: '1px solid #94a3b8', padding: '7px 12px', background: 'white' }}>
+                <td style={{ border: '1px solid #94a3b8', padding: '5px 10px', background: 'white' }}>
                   {courseInfo.instructor}
                 </td>
               </tr>
               <tr>
-                <th style={{ background: '#1e3a5f', color: 'white', border: '1px solid #94a3b8', padding: '7px 12px', textAlign: 'left', whiteSpace: 'nowrap' }}>
+                <th style={{ background: '#1e3a5f', color: 'white', border: '1px solid #94a3b8', padding: '5px 10px', textAlign: 'left', whiteSpace: 'nowrap' }}>
                   훈련기간
                 </th>
-                <td colSpan={3} style={{ border: '1px solid #94a3b8', padding: '7px 12px', background: 'white' }}>
+                <td colSpan={3} style={{ border: '1px solid #94a3b8', padding: '5px 10px', background: 'white' }}>
                   {courseInfo.startDate} ~ {courseInfo.endDate}
                 </td>
               </tr>
@@ -250,9 +242,9 @@ export default function RolloverSurveyPage() {
           </table>
 
           {/* 안내문 */}
-          <p style={{ fontSize: '12px', color: '#374151', marginBottom: '12px', lineHeight: '1.6', background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: '4px', padding: '8px 12px' }}>
+          <div className="print-note">
             📌 수료 후 계속 수강하고 싶으신 과정에 <strong>✓</strong> 표시해 주세요. 기타란에는 희망하시는 교육명을 직접 기입해 주시기 바랍니다.
-          </p>
+          </div>
 
           {/* 수강생 표 */}
           {students.length === 0 ? (
@@ -260,77 +252,68 @@ export default function RolloverSurveyPage() {
               수강생 정보를 불러올 수 없습니다. (HRD-Net 미등록 과정일 수 있습니다)
             </div>
           ) : (
-            <div style={{ overflowX: 'auto' }}>
-              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '11px' }}>
+            <div className="table-scroll-wrapper">
+              <table className="main-student-table" style={{ width: '100%', borderCollapse: 'collapse', tableLayout: 'fixed' }}>
+                <colgroup>
+                  <col style={{ width: '30px' }} />
+                  <col style={{ width: '54px' }} />
+                  {ROLLOVER_COURSES.map(c => (
+                    <col key={c} style={{ width: c === '기타' ? '54px' : '42px' }} />
+                  ))}
+                </colgroup>
                 <thead>
                   <tr>
-                    {/* 번호 */}
-                    <th style={{
+                    <th className="main-th" style={{
                       border: '1px solid #94a3b8',
                       background: '#1e3a5f',
                       color: 'white',
                       textAlign: 'center',
-                      width: '28px',
                       padding: '4px 2px',
                       fontSize: '10px',
+                      fontWeight: 600,
                     }}>
                       번호
                     </th>
-                    {/* 성명 */}
-                    <th style={{
+                    <th className="main-th" style={{
                       border: '1px solid #94a3b8',
                       background: '#1e3a5f',
                       color: 'white',
                       textAlign: 'center',
-                      width: '52px',
-                      padding: '4px 6px',
+                      padding: '4px 2px',
                       fontSize: '10px',
+                      fontWeight: 600,
                     }}>
                       성명
                     </th>
-                    {/* 과정 컬럼 */}
                     {ROLLOVER_COURSES.map(course => (
                       <th
                         key={course}
+                        className="main-th"
                         style={{
                           border: '1px solid #94a3b8',
                           background: COURSE_COLORS[course],
                           textAlign: 'center',
-                          width: course === '기타' ? '52px' : '30px',
-                          height: '90px',
-                          padding: 0,
-                          verticalAlign: 'middle',
-                          overflow: 'hidden',
+                          padding: '4px 2px',
+                          fontSize: '10px',
+                          fontWeight: 700,
+                          color: '#1e293b',
+                          wordBreak: 'keep-all',
+                          lineHeight: 1.3,
+                          overflowWrap: 'break-word',
                         }}
                       >
-                        <div style={{
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          height: '90px',
-                        }}>
-                          <span style={{
-                            display: 'inline-block',
-                            transform: 'rotate(90deg)',
-                            whiteSpace: 'nowrap',
-                            fontSize: '11px',
-                            fontWeight: 600,
-                            color: '#1e293b',
-                          }}>
-                            {course}
-                          </span>
-                        </div>
+                        {course}
                       </th>
                     ))}
                   </tr>
                 </thead>
                 <tbody>
                   {students.map((student, idx) => (
-                    <tr key={student.id} style={{ background: idx % 2 === 0 ? 'white' : '#f0f7ff' }}>
-                      <td style={{ border: '1px solid #94a3b8', textAlign: 'center', color: '#6b7280', height: '28px' }}>
+                    <tr key={student.id} className="data-row" style={{ background: idx % 2 === 0 ? 'white' : '#f0f7ff' }}>
+                      <td style={{ border: '1px solid #94a3b8', textAlign: 'center', color: '#6b7280', fontSize: '10px' }}>
                         {idx + 1}
                       </td>
-                      <td style={{ border: '1px solid #94a3b8', textAlign: 'center', fontWeight: 600, padding: '2px 4px' }}>
+                      <td style={{ border: '1px solid #94a3b8', textAlign: 'center', fontWeight: 600, padding: '2px 4px', fontSize: '10px', overflow: 'hidden' }}>
                         {student.name}
                       </td>
                       {ROLLOVER_COURSES.map(course => (
@@ -338,23 +321,20 @@ export default function RolloverSurveyPage() {
                           key={course}
                           style={{
                             border: '1px solid #94a3b8',
-                            textAlign: 'center',
-                            height: '28px',
                             background: course === '기타' ? '#fafafa' : undefined,
                           }}
                         />
                       ))}
                     </tr>
                   ))}
-                  {/* 빈 행 여유분 */}
-                  {Array.from({ length: 3 }).map((_, i) => (
-                    <tr key={`empty-${i}`} style={{ background: (students.length + i) % 2 === 0 ? 'white' : '#f0f7ff' }}>
-                      <td style={{ border: '1px solid #94a3b8', textAlign: 'center', color: '#d1d5db', height: '28px' }}>
+                  {Array.from({ length: emptyRowCount }).map((_, i) => (
+                    <tr key={`empty-${i}`} className="data-row" style={{ background: (students.length + i) % 2 === 0 ? 'white' : '#f0f7ff' }}>
+                      <td style={{ border: '1px solid #94a3b8', textAlign: 'center', color: '#d1d5db', fontSize: '10px' }}>
                         {students.length + i + 1}
                       </td>
                       <td style={{ border: '1px solid #94a3b8' }} />
                       {ROLLOVER_COURSES.map(course => (
-                        <td key={course} style={{ border: '1px solid #94a3b8', height: '28px' }} />
+                        <td key={course} style={{ border: '1px solid #94a3b8' }} />
                       ))}
                     </tr>
                   ))}
@@ -367,13 +347,91 @@ export default function RolloverSurveyPage() {
 
       {/* 인쇄 스타일 */}
       <style jsx global>{`
+        /* 화면 스타일 */
+        .print-title-section {
+          margin-bottom: 12px;
+        }
+        .print-info-table {
+          margin-bottom: 10px;
+        }
+        .print-note {
+          font-size: 11px;
+          color: #374151;
+          margin-bottom: 10px;
+          line-height: 1.5;
+          background: #eff6ff;
+          border: 1px solid #bfdbfe;
+          border-radius: 4px;
+          padding: 6px 10px;
+        }
+        .table-scroll-wrapper {
+          overflow-x: auto;
+        }
+        .main-student-table .data-row {
+          height: 28px;
+        }
+        .main-student-table .main-th {
+          height: auto;
+        }
+
+        /* 인쇄 스타일 */
         @media print {
+          @page {
+            size: A4 landscape;
+            margin: 8mm;
+          }
+
           .no-print { display: none !important; }
-          .print-area { padding: 0; }
-          body { background: white; }
           aside, header { display: none !important; }
-          main { margin: 0 !important; padding: 16px !important; }
+          main { margin: 0 !important; padding: 0 !important; }
+          body { background: white; }
           * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+
+          .print-area {
+            padding: 0;
+          }
+
+          .print-title-section {
+            margin-bottom: 3mm;
+          }
+
+          .print-info-table {
+            margin-bottom: 2.5mm;
+            font-size: 11px;
+          }
+          .print-info-table th,
+          .print-info-table td {
+            padding: 3.5px 8px !important;
+          }
+
+          .print-note {
+            font-size: 10px;
+            padding: 4px 8px;
+            margin-bottom: 2.5mm;
+          }
+
+          .table-scroll-wrapper {
+            overflow: visible !important;
+          }
+
+          /* 헤더 행 높이 */
+          .main-student-table .main-th {
+            font-size: 9px !important;
+            padding: 3px 1px !important;
+            line-height: 1.2 !important;
+          }
+
+          /* 데이터 행: 20행이 남은 공간을 균등하게 채움 */
+          .main-student-table .data-row {
+            height: 7mm !important;
+          }
+
+          /* colgroup 재정의: 가로 A4 전체 너비에 맞게 */
+          .main-student-table {
+            table-layout: fixed !important;
+            width: 100% !important;
+            font-size: 9px !important;
+          }
         }
       `}</style>
     </div>
