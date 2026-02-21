@@ -104,6 +104,43 @@ export default async function DashboardPage() {
     }
   } catch { /* 조용히 실패 */ }
 
+  // ── 이번 달 예상매출 API 호출 ─────────────────────────────
+  const currentYear = now.getFullYear()
+  const currentMonth = now.getMonth() + 1
+  interface RevenuePeriod {
+    id: string; label: string; start: string; end: string
+    paymentDate: string; month: number; half: number
+    courses: unknown[]
+    totalByType: { NATIONAL: number; UNEMPLOYED: number; EMPLOYED: number }
+    total: number
+  }
+  let monthPeriods: RevenuePeriod[] = []
+  let monthTotal = 0
+  let monthByType = { NATIONAL: 0, UNEMPLOYED: 0, EMPLOYED: 0 }
+  try {
+    const res = await fetch(`${baseUrl}/api/revenue?year=${currentYear}`, fetchOpts)
+    if (res.ok) {
+      const d = await res.json()
+      monthPeriods = (d.periods as RevenuePeriod[]).filter((p: RevenuePeriod) => p.month === currentMonth)
+      monthTotal = monthPeriods.reduce((s, p) => s + p.total, 0)
+      monthByType = {
+        NATIONAL: monthPeriods.reduce((s, p) => s + p.totalByType.NATIONAL, 0),
+        UNEMPLOYED: monthPeriods.reduce((s, p) => s + p.totalByType.UNEMPLOYED, 0),
+        EMPLOYED: monthPeriods.reduce((s, p) => s + p.totalByType.EMPLOYED, 0),
+      }
+    }
+  } catch { /* 조용히 실패 */ }
+
+  const fmtWon = (n: number) => {
+    if (n === 0) return '-'
+    if (n >= 100_000_000) {
+      const eok = Math.floor(n / 100_000_000)
+      const man = Math.floor((n % 100_000_000) / 10_000)
+      return man > 0 ? `${eok}억 ${man.toLocaleString()}만원` : `${eok}억원`
+    }
+    return `${Math.floor(n / 10_000).toLocaleString()}만원`
+  }
+
   // 19:00 슬롯 기준 강의실 현황
   const eveningOccupied = new Map<string, SlotInfo>()
   for (const room of ALL_ROOMS) {
@@ -415,6 +452,53 @@ export default async function DashboardPage() {
 
         </div>
       </div>
+
+      {/* ── 이번 달 예상매출 ─────────────────────────────── */}
+      <Link href="/revenue" className="group block">
+        <Card className="hover:shadow-md transition-all border-2 hover:border-yellow-300 cursor-pointer border-yellow-200 bg-yellow-50/40">
+          <CardHeader className="pb-3">
+            <div className="flex items-start justify-between">
+              <div className="flex items-center gap-3">
+                <div className="w-11 h-11 rounded-xl bg-yellow-100 flex items-center justify-center text-2xl flex-shrink-0">💰</div>
+                <div>
+                  <CardTitle className="text-base group-hover:text-yellow-700 transition-colors">
+                    {currentMonth}월 국비지원 예상매출
+                  </CardTitle>
+                  <CardDescription className="text-xs mt-0.5">단위기간 기준 지급 예정액</CardDescription>
+                </div>
+              </div>
+              <span className="text-muted-foreground group-hover:text-yellow-600 transition-colors text-lg">→</span>
+            </div>
+          </CardHeader>
+          <CardContent>
+            <div className="flex items-baseline gap-2 mb-3">
+              <span className="text-2xl font-bold text-yellow-700">{fmtWon(monthTotal)}</span>
+              <span className="text-sm text-muted-foreground">이번 달 합계</span>
+            </div>
+            {monthPeriods.length > 0 ? (
+              <div className="space-y-2">
+                {monthPeriods.map(p => p.total > 0 && (
+                  <div key={p.id} className="flex items-center justify-between text-sm rounded-lg bg-white border border-yellow-100 px-3 py-2">
+                    <div>
+                      <span className="font-medium text-gray-700">{p.half === 1 ? '상반월' : '하반월'}</span>
+                      <span className="text-xs text-gray-400 ml-2">{p.label.replace(/\d{4}년 \d+월 /, '')}</span>
+                      <span className="text-xs text-blue-500 ml-2">→ {p.paymentDate} 지급</span>
+                    </div>
+                    <span className="font-semibold text-gray-800">{fmtWon(p.total)}</span>
+                  </div>
+                ))}
+                <div className="flex gap-3 text-xs text-muted-foreground pt-1">
+                  {monthByType.NATIONAL > 0 && <span className="text-red-600">국기 {fmtWon(monthByType.NATIONAL)}</span>}
+                  {monthByType.UNEMPLOYED > 0 && <span className="text-orange-600">실업자 {fmtWon(monthByType.UNEMPLOYED)}</span>}
+                  {monthByType.EMPLOYED > 0 && <span className="text-blue-600">재직자 {fmtWon(monthByType.EMPLOYED)}</span>}
+                </div>
+              </div>
+            ) : (
+              <p className="text-sm text-muted-foreground">이번 달 예상매출 데이터 없음</p>
+            )}
+          </CardContent>
+        </Card>
+      </Link>
 
       {/* ── 카테고리 3: 분석 & 통계 ───────────────────────── */}
       <div className="space-y-3">
