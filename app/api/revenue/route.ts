@@ -30,6 +30,7 @@ export async function GET(request: NextRequest) {
       .in('type', ['NATIONAL', 'UNEMPLOYED', 'EMPLOYED'])
       .lte('start_date', yearEnd)   // 해당 연도 내에 시작한 과정
       .gte('end_date', yearStart)   // 해당 연도 내에 수업이 있는 과정
+      .neq('instructor', '???')     // 강사 미정 과정 제외
 
     if (error) throw error
 
