@@ -14,6 +14,7 @@ const NAV_ITEMS = [
   { href: '/competitors', label: '경쟁기관', icon: '🔍' },
   { href: '/rollover-survey', label: '이월희망조사표', icon: '📝' },
   { href: '/revenue', label: '국비지원 예상매출', icon: '💰' },
+  { href: '/waitlist', label: '차기 개강 대기자', icon: '📌' },
 ]
 
 export default function Sidebar() {
