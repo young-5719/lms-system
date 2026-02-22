@@ -4,11 +4,9 @@ import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from '@/components/ui/table'
 import ExportButton from '@/components/instructors/ExportButton'
+import InstructorDetailView, { type InstructorData, type MonthCourseDetail } from '@/components/instructors/InstructorDetailView'
 
-const TYPE_LABEL: Record<string, string> = {
-  GENERAL: '일반', EMPLOYED: '재직자', UNEMPLOYED: '실업자',
-  NATIONAL: '국기', ASSESSMENT: '과평', KDT: 'KDT', INDUSTRY: '산대특',
-}
+const DAY_NAMES = ['일', '월', '화', '수', '목', '금', '토']
 
 // "09:00" → 9.0 (소수점 시간)
 function timeToDec(t: string): number {
@@ -58,13 +56,8 @@ function parseTimeRangeDuration(str: string | null): number {
   return isNaN(n) ? 0 : n
 }
 
-interface MonthCourseDetail {
-  name: string
-  type: string
-  roomNumber: string
-  hours: number
-  days: number
-}
+// MonthCourseDetail은 InstructorDetailView에서 export된 타입을 재사용
+// (타입 일치 보장을 위해 로컬 정의 제거 후 import 사용)
 
 export default async function InstructorsPage() {
   const supabase = await createClient()
@@ -80,7 +73,10 @@ export default async function InstructorsPage() {
 
   // 강사별 → 월별 → 과정별 시간 계산
   // key: "강사명" → "2026-01" → { courseName: hours }
-  const instructorMap = new Map<string, Map<string, Map<string, { hours: number; days: number; type: string; roomNumber: string }>>>()
+  const instructorMap = new Map<string, Map<string, Map<string, {
+    hours: number; days: number; type: string; roomNumber: string
+    sessions: { date: string; dayOfWeek: string; hours: number }[]
+  }>>>()
 
   if (courses) {
     for (const course of courses) {
@@ -145,6 +141,7 @@ export default async function InstructorsPage() {
 
         let monthTotalHours = 0
         let monthDayCount = 0
+        const sessions: { date: string; dayOfWeek: string; hours: number }[] = []
 
         for (const dayStr of dayMatches) {
           const day = parseInt(dayStr)
@@ -161,6 +158,16 @@ export default async function InstructorsPage() {
 
           monthTotalHours += hours
           monthDayCount++
+
+          if (hours > 0) {
+            const dateStr = `${calcYear}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`
+            const dateObj = new Date(dateStr + 'T00:00:00')
+            sessions.push({
+              date: dateStr,
+              dayOfWeek: DAY_NAMES[dateObj.getDay()],
+              hours: Math.round(hours * 10) / 10,
+            })
+          }
         }
 
         if (monthTotalHours <= 0) continue
@@ -175,21 +182,19 @@ export default async function InstructorsPage() {
           monthMap.set(monthKey, new Map())
         }
         const courseMap = monthMap.get(monthKey)!
-        const existing = courseMap.get(course.course_name) || { hours: 0, days: 0, type: course.type, roomNumber: course.room_number || '-' }
+        const existing = courseMap.get(course.course_name) || {
+          hours: 0, days: 0, type: course.type, roomNumber: course.room_number || '-',
+          sessions: [] as { date: string; dayOfWeek: string; hours: number }[],
+        }
         existing.hours += monthTotalHours
         existing.days += monthDayCount
+        existing.sessions = [...existing.sessions, ...sessions]
         courseMap.set(course.course_name, existing)
       }
     }
   }
 
   // 데이터 정리
-  interface InstructorData {
-    name: string
-    totalHours: number
-    monthly: Record<string, { total: number; courses: MonthCourseDetail[] }>
-  }
-
   const instructors: InstructorData[] = []
 
   for (const [name, monthMap] of instructorMap) {
@@ -208,7 +213,8 @@ export default async function InstructorsPage() {
           roomNumber: data.roomNumber,
           hours: rounded,
           days: data.days,
-        })
+          sessions: data.sessions,
+        } satisfies MonthCourseDetail)
       }
       monthly[monthKey] = { total: Math.round(monthTotal * 10) / 10, courses }
       totalHours += monthTotal
@@ -314,55 +320,9 @@ export default async function InstructorsPage() {
         </CardContent>
       </Card>
 
-      {/* 강사별 상세 */}
+      {/* 강사별 상세 (요약 ↔ 상세조회 토글) */}
       {instructors.map((inst) => (
-        <Card key={inst.name}>
-          <CardHeader>
-            <CardTitle>{inst.name} 강사</CardTitle>
-            <CardDescription>총 수업시간: {inst.totalHours}시간</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-4">
-              {allMonths.map((monthKey) => {
-                const md = inst.monthly[monthKey]
-                if (!md) return null
-                const monthNum = parseInt(monthKey.split('-')[1])
-                return (
-                  <div key={monthKey}>
-                    <h4 className="text-sm font-semibold mb-2">
-                      {monthNum}월
-                      <span className="ml-2 text-muted-foreground font-normal">({md.total}시간)</span>
-                    </h4>
-                    <div className="rounded-md border">
-                      <Table>
-                        <TableHeader>
-                          <TableRow>
-                            <TableHead>과정명</TableHead>
-                            <TableHead>구분</TableHead>
-                            <TableHead>강의실</TableHead>
-                            <TableHead className="text-right">수업일수</TableHead>
-                            <TableHead className="text-right">소계</TableHead>
-                          </TableRow>
-                        </TableHeader>
-                        <TableBody>
-                          {md.courses.map((c, i) => (
-                            <TableRow key={i}>
-                              <TableCell className="text-sm">{c.name}</TableCell>
-                              <TableCell className="text-sm">{TYPE_LABEL[c.type] || c.type}</TableCell>
-                              <TableCell className="text-sm">{c.roomNumber}호</TableCell>
-                              <TableCell className="text-right text-sm">{c.days}일</TableCell>
-                              <TableCell className="text-right text-sm font-medium">{c.hours}h</TableCell>
-                            </TableRow>
-                          ))}
-                        </TableBody>
-                      </Table>
-                    </div>
-                  </div>
-                )
-              })}
-            </div>
-          </CardContent>
-        </Card>
+        <InstructorDetailView key={inst.name} instructor={inst} allMonths={allMonths} />
       ))}
     </div>
   )
