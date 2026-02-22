@@ -34,16 +34,20 @@ const TYPE_STYLE: Record<string, string> = {
   INDUSTRY: 'bg-green-600 text-white',
 }
 
-// 과정 수에 따른 인쇄 사이즈 클래스
-function getPrintSize(totalCourses: number) {
-  if (totalCourses <= 4) {
+// 과정 수에 따른 인쇄 사이즈 클래스 (평일 최대 6개, 주말 최대 2개)
+function getPrintSize(weekdayCount: number, weekendCount: number) {
+  const total = weekdayCount + weekendCount
+  if (total <= 2) {
     return { header: 'print-text-base', cell: 'print-text-base', cellPy: 'print-py-6', headerTitle: 'print-text-4xl' }
   }
-  if (totalCourses <= 6) {
+  if (total <= 4) {
     return { header: 'print-text-sm-plus', cell: 'print-text-sm-plus', cellPy: 'print-py-4', headerTitle: 'print-text-3xl' }
   }
+  if (total <= 6) {
+    return { header: 'print-text-sm', cell: 'print-text-sm', cellPy: 'print-py-3', headerTitle: 'print-text-2xl' }
+  }
   // 7~8개
-  return { header: 'print-text-sm', cell: 'print-text-sm', cellPy: 'print-py-3', headerTitle: 'print-text-3xl' }
+  return { header: 'print-text-xs', cell: 'print-text-xs', cellPy: 'print-py-2', headerTitle: 'print-text-xl' }
 }
 
 export default function RoomSchedulePrint({ rooms }: { rooms: RoomData[] }) {
@@ -105,8 +109,7 @@ export default function RoomSchedulePrint({ rooms }: { rooms: RoomData[] }) {
       {filteredRooms.map((roomData) => {
         const weekdayCourses = roomData.courses.filter(c => c.isWeekend !== 'WEEKEND')
         const weekendCourses = roomData.courses.filter(c => c.isWeekend === 'WEEKEND')
-        const totalCourses = roomData.courses.length
-        const sz = getPrintSize(totalCourses)
+        const sz = getPrintSize(weekdayCourses.length, weekendCourses.length)
 
         return (
           <div key={roomData.room} className="room-schedule-page mb-8">
@@ -139,12 +142,12 @@ export default function RoomSchedulePrint({ rooms }: { rooms: RoomData[] }) {
                           </colgroup>
                           <thead>
                             <tr>
-                              <th className={`border-2 border-gray-800 bg-gray-100 px-3 py-3 text-center text-sm font-bold ${sz.header}`}>구분</th>
-                              <th className={`border-2 border-gray-800 bg-gray-100 px-3 py-3 text-left text-sm font-bold ${sz.header}`}>과정명</th>
-                              <th className={`border-2 border-gray-800 bg-gray-100 px-3 py-3 text-center text-sm font-bold ${sz.header}`}>훈련기간</th>
-                              <th className={`border-2 border-gray-800 bg-gray-100 px-3 py-3 text-center text-sm font-bold ${sz.header}`}>요일</th>
-                              <th className={`border-2 border-gray-800 bg-gray-100 px-3 py-3 text-center text-sm font-bold ${sz.header}`}>수업시간</th>
-                              <th className={`border-2 border-gray-800 bg-gray-100 px-3 py-3 text-center text-sm font-bold ${sz.header}`}>강사</th>
+                              <th className={`border-2 border-gray-800 bg-gray-100 px-3 py-3 text-center text-sm font-bold ${sz.header} ${sz.cellPy}`}>구분</th>
+                              <th className={`border-2 border-gray-800 bg-gray-100 px-3 py-3 text-left text-sm font-bold ${sz.header} ${sz.cellPy}`}>과정명</th>
+                              <th className={`border-2 border-gray-800 bg-gray-100 px-3 py-3 text-center text-sm font-bold ${sz.header} ${sz.cellPy}`}>훈련기간</th>
+                              <th className={`border-2 border-gray-800 bg-gray-100 px-3 py-3 text-center text-sm font-bold ${sz.header} ${sz.cellPy}`}>요일</th>
+                              <th className={`border-2 border-gray-800 bg-gray-100 px-3 py-3 text-center text-sm font-bold ${sz.header} ${sz.cellPy}`}>수업시간</th>
+                              <th className={`border-2 border-gray-800 bg-gray-100 px-3 py-3 text-center text-sm font-bold ${sz.header} ${sz.cellPy}`}>강사</th>
                             </tr>
                           </thead>
                           <tbody>
@@ -187,12 +190,12 @@ export default function RoomSchedulePrint({ rooms }: { rooms: RoomData[] }) {
                           {weekdayCourses.length === 0 && (
                             <thead>
                               <tr>
-                                <th className={`border-2 border-gray-800 bg-gray-100 px-3 py-3 text-center text-sm font-bold ${sz.header}`}>구분</th>
-                                <th className={`border-2 border-gray-800 bg-gray-100 px-3 py-3 text-left text-sm font-bold ${sz.header}`}>과정명</th>
-                                <th className={`border-2 border-gray-800 bg-gray-100 px-3 py-3 text-center text-sm font-bold ${sz.header}`}>훈련기간</th>
-                                <th className={`border-2 border-gray-800 bg-gray-100 px-3 py-3 text-center text-sm font-bold ${sz.header}`}>요일</th>
-                                <th className={`border-2 border-gray-800 bg-gray-100 px-3 py-3 text-center text-sm font-bold ${sz.header}`}>수업시간</th>
-                                <th className={`border-2 border-gray-800 bg-gray-100 px-3 py-3 text-center text-sm font-bold ${sz.header}`}>강사</th>
+                                <th className={`border-2 border-gray-800 bg-gray-100 px-3 py-3 text-center text-sm font-bold ${sz.header} ${sz.cellPy}`}>구분</th>
+                                <th className={`border-2 border-gray-800 bg-gray-100 px-3 py-3 text-left text-sm font-bold ${sz.header} ${sz.cellPy}`}>과정명</th>
+                                <th className={`border-2 border-gray-800 bg-gray-100 px-3 py-3 text-center text-sm font-bold ${sz.header} ${sz.cellPy}`}>훈련기간</th>
+                                <th className={`border-2 border-gray-800 bg-gray-100 px-3 py-3 text-center text-sm font-bold ${sz.header} ${sz.cellPy}`}>요일</th>
+                                <th className={`border-2 border-gray-800 bg-gray-100 px-3 py-3 text-center text-sm font-bold ${sz.header} ${sz.cellPy}`}>수업시간</th>
+                                <th className={`border-2 border-gray-800 bg-gray-100 px-3 py-3 text-center text-sm font-bold ${sz.header} ${sz.cellPy}`}>강사</th>
                               </tr>
                             </thead>
                           )}
