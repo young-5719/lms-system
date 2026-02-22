@@ -81,7 +81,7 @@ export default async function InstructorsPage() {
   if (courses) {
     for (const course of courses) {
       const instructor = (course.instructor || '').trim()
-      if (!instructor || instructor === '-') continue
+      if (!instructor || instructor === '-' || instructor === '???') continue
 
       const defaultDailyHours = course.daily_hours || 0
       if (defaultDailyHours <= 0) continue
