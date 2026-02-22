@@ -14,6 +14,25 @@ interface SlotInfo {
   type?: string
 }
 
+interface VacancyCell {
+  vacancyRate: number
+  vacantDays: number
+  totalDays: number
+}
+
+interface VacancyData {
+  months: string[]
+  rooms: string[]
+  data: Record<string, Record<string, VacancyCell>>
+}
+
+function vacancyColor(rate: number) {
+  if (rate >= 80) return 'bg-red-50 text-red-700 font-semibold'
+  if (rate >= 50) return 'bg-orange-50 text-orange-600'
+  if (rate >= 20) return 'bg-yellow-50 text-yellow-700'
+  return 'bg-green-50 text-green-700'
+}
+
 interface TimeSlot {
   label: string
   start: string
@@ -72,6 +91,8 @@ export default function EmptyRoomsPage() {
   const [data, setData] = useState<RoomData | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
+  const [vacancyData, setVacancyData] = useState<VacancyData | null>(null)
+  const [vacancyLoading, setVacancyLoading] = useState(true)
 
   const fetchData = useCallback(async (date: string) => {
     setLoading(true)
@@ -92,6 +113,14 @@ export default function EmptyRoomsPage() {
     fetchData(selectedDate)
   }, [selectedDate, fetchData])
 
+  useEffect(() => {
+    fetch('/api/room-vacancy')
+      .then(r => r.json())
+      .then(setVacancyData)
+      .catch(() => {})
+      .finally(() => setVacancyLoading(false))
+  }, [])
+
   // 오늘 포함 7일치 날짜 버튼
   const today = startOfDay(new Date())
   const dateButtons = Array.from({ length: 14 }, (_, i) => addDays(today, i))
@@ -105,6 +134,90 @@ export default function EmptyRoomsPage() {
         <h2 className="text-3xl font-bold tracking-tight">강의실 현황</h2>
         <p className="text-muted-foreground">날짜별 강의실 사용 현황을 한눈에 확인하세요</p>
       </div>
+
+      {/* 월별 강의장 공실률 */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">월별 강의장 공실률</CardTitle>
+          <p className="text-xs text-muted-foreground">2026년 평일 기준 (공휴일 제외) · 수업 없는 날 비율 · 높을수록 많이 비는 강의장</p>
+        </CardHeader>
+        <CardContent>
+          {vacancyLoading ? (
+            <div className="text-sm text-muted-foreground py-4 text-center">불러오는 중...</div>
+          ) : vacancyData ? (() => {
+            const { months, rooms, data: vd } = vacancyData
+            // 월별 전체 평균
+            const monthAvgs = months.map(m => {
+              const rates = rooms.map(r => vd[r]?.[m]?.vacancyRate ?? 0)
+              return Math.round(rates.reduce((a, b) => a + b, 0) / rooms.length)
+            })
+            // 연간 평균 기준 정렬 (공실률 높은 순)
+            const sortedRooms = [...rooms].sort((a, b) => (vd[b]?.['average']?.vacancyRate ?? 0) - (vd[a]?.['average']?.vacancyRate ?? 0))
+            return (
+              <div className="overflow-x-auto">
+                <table className="w-full border-collapse text-sm min-w-[900px]">
+                  <thead>
+                    <tr className="bg-gray-50">
+                      <th className="border px-3 py-2 text-left font-semibold whitespace-nowrap">강의장</th>
+                      {months.map(m => (
+                        <th key={m} className="border px-2 py-2 text-center font-semibold whitespace-nowrap">
+                          {parseInt(m.split('-')[1])}월
+                        </th>
+                      ))}
+                      <th className="border px-3 py-2 text-center font-bold whitespace-nowrap bg-gray-100">평균</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {sortedRooms.map(room => {
+                      const avg = vd[room]?.['average']?.vacancyRate ?? 0
+                      return (
+                        <tr key={room} className="hover:bg-gray-50/50">
+                          <td className="border px-3 py-2 font-semibold whitespace-nowrap">{room}호</td>
+                          {months.map(m => {
+                            const cell = vd[room]?.[m]
+                            const rate = cell?.vacancyRate ?? 0
+                            return (
+                              <td key={m} className={`border px-2 py-2 text-center text-xs ${vacancyColor(rate)}`}
+                                title={`${room}호 ${parseInt(m.split('-')[1])}월: 공실 ${cell?.vacantDays ?? 0}일 / 전체 ${cell?.totalDays ?? 0}일`}>
+                                {rate}%
+                              </td>
+                            )
+                          })}
+                          <td className={`border px-3 py-2 text-center font-bold text-sm ${vacancyColor(avg)} bg-opacity-70`}>
+                            {avg}%
+                          </td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                  <tfoot>
+                    <tr className="bg-gray-50 font-semibold">
+                      <td className="border px-3 py-2 whitespace-nowrap">월평균</td>
+                      {monthAvgs.map((avg, i) => (
+                        <td key={i} className={`border px-2 py-2 text-center text-xs ${vacancyColor(avg)}`}>
+                          {avg}%
+                        </td>
+                      ))}
+                      <td className="border px-3 py-2 text-center font-bold bg-gray-100">
+                        {Math.round(monthAvgs.reduce((a, b) => a + b, 0) / monthAvgs.length)}%
+                      </td>
+                    </tr>
+                  </tfoot>
+                </table>
+                <div className="flex items-center gap-4 mt-3 text-xs text-muted-foreground flex-wrap">
+                  <span className="font-medium">공실률 범례:</span>
+                  <span className="flex items-center gap-1"><span className="inline-block w-3 h-3 rounded bg-green-50 border border-green-200" /> 0~19% (활발히 사용)</span>
+                  <span className="flex items-center gap-1"><span className="inline-block w-3 h-3 rounded bg-yellow-50 border border-yellow-200" /> 20~49%</span>
+                  <span className="flex items-center gap-1"><span className="inline-block w-3 h-3 rounded bg-orange-50 border border-orange-200" /> 50~79%</span>
+                  <span className="flex items-center gap-1"><span className="inline-block w-3 h-3 rounded bg-red-50 border border-red-200" /> 80%+ (많이 빔)</span>
+                </div>
+              </div>
+            )
+          })() : (
+            <div className="text-sm text-muted-foreground py-4 text-center">공실률 데이터를 불러올 수 없습니다</div>
+          )}
+        </CardContent>
+      </Card>
 
       {/* 날짜 선택 */}
       <Card>
