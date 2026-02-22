@@ -66,6 +66,7 @@ export default async function InstructorsPage() {
     .from('courses')
     .select('instructor, course_name, type, room_number, start_date, end_date, daily_hours, lecture_days, is_weekend, schedule_change, special_lecture_1, special_lecture_1_time, special_lecture_2, special_lecture_2_time')
     .not('instructor', 'is', null)
+    .neq('instructor', '???')
     .in('type', ['EMPLOYED', 'GENERAL', 'UNEMPLOYED'])
     .gte('end_date', '2026-01-01')
     .lte('start_date', '2026-12-31')

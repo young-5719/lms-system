@@ -51,9 +51,10 @@ export default function InstructorDetailView({ instructor, allMonths }: Props) {
             <CardDescription>총 수업시간: {instructor.totalHours}시간</CardDescription>
           </div>
           <Button
-            variant={showDetail ? 'default' : 'outline'}
             size="sm"
             onClick={() => setShowDetail(!showDetail)}
+            style={{ backgroundColor: showDetail ? '#1877F2' : '#1877F2', color: '#fff', borderColor: '#1877F2' }}
+            className="hover:opacity-90"
           >
             {showDetail ? '요약 보기' : '상세 조회'}
           </Button>
