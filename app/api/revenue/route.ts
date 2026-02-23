@@ -18,7 +18,6 @@ export async function GET(request: NextRequest) {
     const year = parseInt(searchParams.get('year') || String(new Date().getFullYear()))
     const today = new Date().toISOString().slice(0, 10)
 
-    // 선택 연도의 단위기간에 수업이 있는 과정 전체 조회
     const yearStart = `${year}-01-01`
     const yearEnd = `${year}-12-31`
 
@@ -28,43 +27,84 @@ export async function GET(request: NextRequest) {
         'training_id, course_name, type, instructor, start_date, end_date, tuition, current_students_gov, capacity, day_of_week, lecture_days, holidays, is_weekend'
       )
       .in('type', ['NATIONAL', 'UNEMPLOYED', 'EMPLOYED'])
-      .lte('start_date', yearEnd)   // 해당 연도 내에 시작한 과정
-      .gte('end_date', yearStart)   // 해당 연도 내에 수업이 있는 과정
-      .neq('instructor', '???')     // 강사 미정 과정 제외
+      .lte('start_date', yearEnd)
+      .gte('end_date', yearStart)
+      .neq('instructor', '???')
 
     if (error) throw error
 
-    const unitPeriods = generateUnitPeriods(year)
+    // ── 연도 내 지급 슬롯 초기화 (달력 상반기 a / 하반기 b) ──────────────────
+    const slotMap = new Map<string, SlotData>()
 
-    const periods = unitPeriods.map((period) => {
-      const courseRevenues: CourseRevenue[] = []
+    for (let m = 1; m <= 12; m++) {
+      const mm = String(m).padStart(2, '0')
+      const lastDay = new Date(year, m, 0).getDate()
+      const nextYear = m === 12 ? year + 1 : year
+      const nm = String(m === 12 ? 1 : m + 1).padStart(2, '0')
 
-      for (const course of courses || []) {
-        const tuition = course.tuition || 0
-        // col46 = current_students_gov, null이면 capacity로 대체
-        const students = course.current_students_gov ?? course.capacity ?? 0
-        if (tuition === 0 || students === 0) continue
+      slotMap.set(`${year}-${mm}-a`, {
+        id: `${year}-${mm}-1`,
+        label: `${year}년 ${m}월 상반기`,
+        start: `${year}-${mm}-01`,
+        end: `${year}-${mm}-15`,
+        paymentDate: `${nextYear}-${nm}-05`,
+        month: m,
+        half: 1,
+        courses: [],
+      })
 
-        // 전체 수업일수 (과정 전체 기간)
-        const totalDays = countTrainingDays(course, course.start_date, course.end_date)
-        if (totalDays === 0) continue
+      slotMap.set(`${year}-${mm}-b`, {
+        id: `${year}-${mm}-2`,
+        label: `${year}년 ${m}월 하반기`,
+        start: `${year}-${mm}-16`,
+        end: `${year}-${mm}-${String(lastDay).padStart(2, '0')}`,
+        paymentDate: `${nextYear}-${nm}-20`,
+        month: m,
+        half: 2,
+        courses: [],
+      })
+    }
 
-        // 단위기간 내 수업일수
-        const periodDays = countTrainingDays(course, period.start, period.end)
+    // ── 과정별 단위기간 계산 및 슬롯 배정 ────────────────────────────────────
+    for (const course of courses || []) {
+      const tuition = course.tuition || 0
+      const students = course.current_students_gov ?? course.capacity ?? 0
+      if (tuition === 0 || students === 0) continue
+
+      const totalDays = countTrainingDays(course, course.start_date, course.end_date)
+      if (totalDays === 0) continue
+
+      const multiplier = TYPE_MULTIPLIER[course.type] ?? 1
+
+      // 개강일 기준 1개월 단위로 단위기간 생성
+      const unitPeriods = generateCourseUnitPeriods(course.start_date, course.end_date)
+
+      for (const up of unitPeriods) {
+        // 단위기간 종료일이 해당 연도 내인 경우만 집계
+        if (up.end < yearStart || up.end > yearEnd) continue
+
+        const periodDays = countTrainingDays(course, up.start, up.end)
         if (periodDays === 0) continue
 
-        const multiplier = TYPE_MULTIPLIER[course.type] ?? 1
-        // 공식: 훈련단가(tuition) × 인원(col46) × 변수 → 단위기간 비율로 배분
-        // 단위기간 지급액 = tuition × (단위기간 수업일수 / 전체 수업일수) × 인원 × 변수
         const revenue = Math.round(tuition * (periodDays / totalDays) * students * multiplier)
 
-        courseRevenues.push({
+        // 종료일의 일자로 상반기(a) / 하반기(b) 판단
+        const endDay = parseInt(up.end.slice(8, 10))
+        const endYearMonth = up.end.slice(0, 7)
+        const slotKey = `${endYearMonth}-${endDay <= 15 ? 'a' : 'b'}`
+
+        const slot = slotMap.get(slotKey)
+        if (!slot) continue
+
+        slot.courses.push({
           trainingId: course.training_id,
           courseName: course.course_name,
           instructor: course.instructor || '',
           type: course.type,
           startDate: course.start_date,
           endDate: course.end_date,
+          unitPeriodStart: up.start,
+          unitPeriodEnd: up.end,
           periodDays,
           totalDays,
           tuition,
@@ -73,16 +113,17 @@ export async function GET(request: NextRequest) {
           revenue,
         })
       }
+    }
 
+    // ── 슬롯별 합계 계산 ────────────────────────────────────────────────────
+    const periods = Array.from(slotMap.values()).map((slot) => {
       const totalByType = {
-        NATIONAL: courseRevenues.filter((c) => c.type === 'NATIONAL').reduce((s, c) => s + c.revenue, 0),
-        UNEMPLOYED: courseRevenues.filter((c) => c.type === 'UNEMPLOYED').reduce((s, c) => s + c.revenue, 0),
-        EMPLOYED: courseRevenues.filter((c) => c.type === 'EMPLOYED').reduce((s, c) => s + c.revenue, 0),
+        NATIONAL: slot.courses.filter((c) => c.type === 'NATIONAL').reduce((s, c) => s + c.revenue, 0),
+        UNEMPLOYED: slot.courses.filter((c) => c.type === 'UNEMPLOYED').reduce((s, c) => s + c.revenue, 0),
+        EMPLOYED: slot.courses.filter((c) => c.type === 'EMPLOYED').reduce((s, c) => s + c.revenue, 0),
       }
-
       return {
-        ...period,
-        courses: courseRevenues,
+        ...slot,
         totalByType,
         total: Object.values(totalByType).reduce((a, b) => a + b, 0),
       }
@@ -107,7 +148,7 @@ export async function GET(request: NextRequest) {
   }
 }
 
-// ── Types ─────────────────────────────────────────────────────────────────────
+// ── Types ──────────────────────────────────────────────────────────────────────
 
 interface CourseRevenue {
   trainingId: number
@@ -116,49 +157,63 @@ interface CourseRevenue {
   type: string
   startDate: string
   endDate: string
-  periodDays: number   // 단위기간 내 수업일수
-  totalDays: number    // 과정 전체 수업일수
+  unitPeriodStart: string  // 과정 기준 단위기간 시작일
+  unitPeriodEnd: string    // 과정 기준 단위기간 종료일 (이 날짜로 슬롯 결정)
+  periodDays: number
+  totalDays: number
   tuition: number
   students: number
   multiplier: number
   revenue: number
 }
 
-// ── Unit Period Generation ─────────────────────────────────────────────────────
+interface SlotData {
+  id: string
+  label: string
+  start: string
+  end: string
+  paymentDate: string
+  month: number
+  half: number
+  courses: CourseRevenue[]
+}
 
-function generateUnitPeriods(year: number) {
-  const periods = []
-  for (let month = 1; month <= 12; month++) {
-    const mm = String(month).padStart(2, '0')
-    const lastDay = new Date(year, month, 0).getDate()
-    const nextMonth = month === 12 ? 1 : month + 1
-    const nextYear = month === 12 ? year + 1 : year
-    const nm = String(nextMonth).padStart(2, '0')
+// ── 과정 기준 단위기간 생성 ────────────────────────────────────────────────────
+// 개강일 ~ 개강일+1개월-1일 → 개강일+1개월 ~ 개강일+2개월-1일 → ...
+function generateCourseUnitPeriods(startDate: string, endDate: string): Array<{ start: string; end: string }> {
+  const periods: Array<{ start: string; end: string }> = []
+  const courseEnd = new Date(endDate + 'T00:00:00')
+  let periodStart = new Date(startDate + 'T00:00:00')
 
-    periods.push({
-      id: `${year}-${mm}-1`,
-      label: `${year}년 ${month}월 1~15일`,
-      start: `${year}-${mm}-01`,
-      end: `${year}-${mm}-15`,
-      paymentDate: `${nextYear}-${nm}-05`,
-      month,
-      half: 1,
-    })
+  while (periodStart <= courseEnd) {
+    // 단위기간 종료일: 시작일 + 1개월 - 1일
+    const periodEnd = new Date(periodStart)
+    periodEnd.setMonth(periodEnd.getMonth() + 1)
+    periodEnd.setDate(periodEnd.getDate() - 1)
 
-    periods.push({
-      id: `${year}-${mm}-2`,
-      label: `${year}년 ${month}월 16~${lastDay}일`,
-      start: `${year}-${mm}-16`,
-      end: `${year}-${mm}-${String(lastDay).padStart(2, '0')}`,
-      paymentDate: `${nextYear}-${nm}-20`,
-      month,
-      half: 2,
-    })
+    // 과정 종료일 초과 시 캡
+    const actualEnd = periodEnd > courseEnd ? new Date(courseEnd) : periodEnd
+
+    periods.push({ start: toDateStr(periodStart), end: toDateStr(actualEnd) })
+
+    // 다음 단위기간 시작일: periodEnd + 1 (과정 종료일 기준이 아닌 월 경계 기준)
+    const nextStart = new Date(periodEnd)
+    nextStart.setDate(nextStart.getDate() + 1)
+    periodStart = nextStart
   }
+
   return periods
 }
 
-// ── Training Day Count ─────────────────────────────────────────────────────────
+function toDateStr(d: Date): string {
+  return (
+    d.getFullYear() + '-' +
+    String(d.getMonth() + 1).padStart(2, '0') + '-' +
+    String(d.getDate()).padStart(2, '0')
+  )
+}
+
+// ── 수업일수 계산 ──────────────────────────────────────────────────────────────
 
 function countTrainingDays(
   course: {
@@ -179,47 +234,35 @@ function countTrainingDays(
 
   const holidaySet = parseHolidayDates(course.holidays || '')
 
-  // lecture_days(col38)가 있으면 실제 날짜 목록 기준
   if (course.lecture_days) {
     const lectureSet = parseLectureDates(course.lecture_days, course.start_date)
     let count = 0
     for (const d of lectureSet) {
-      if (d >= effectiveStart && d <= effectiveEnd && !holidaySet.has(d) && !KOREAN_HOLIDAYS[d]) {
-        count++
-      }
+      if (d >= effectiveStart && d <= effectiveEnd && !holidaySet.has(d) && !KOREAN_HOLIDAYS[d]) count++
     }
     return count
   }
 
-  // lecture_days 없으면 요일 패턴으로 계산
   let courseDays: number[] | null = parseDaysOfWeek(course.day_of_week)
   if (!courseDays) {
-    if (course.is_weekend === 'WEEKEND') {
-      courseDays = [new Date(course.start_date + 'T00:00:00').getDay()]
-    } else {
-      courseDays = [1, 2, 3, 4, 5]
-    }
+    courseDays = course.is_weekend === 'WEEKEND'
+      ? [new Date(course.start_date + 'T00:00:00').getDay()]
+      : [1, 2, 3, 4, 5]
   }
 
   let count = 0
   const cur = new Date(effectiveStart + 'T00:00:00')
   const end = new Date(effectiveEnd + 'T00:00:00')
   while (cur <= end) {
-    const y = cur.getFullYear()
-    const mo = String(cur.getMonth() + 1).padStart(2, '0')
-    const d = String(cur.getDate()).padStart(2, '0')
-    const dateStr = `${y}-${mo}-${d}`
-    if (courseDays.includes(cur.getDay()) && !holidaySet.has(dateStr) && !KOREAN_HOLIDAYS[dateStr]) {
-      count++
-    }
+    const dateStr = toDateStr(cur)
+    if (courseDays.includes(cur.getDay()) && !holidaySet.has(dateStr) && !KOREAN_HOLIDAYS[dateStr]) count++
     cur.setDate(cur.getDate() + 1)
   }
   return count
 }
 
-// ── Helpers ───────────────────────────────────────────────────────────────────
+// ── Helpers ────────────────────────────────────────────────────────────────────
 
-/** 과정별 휴강일 파싱: "26/1/31(토)" 또는 JS Date string 형식 모두 처리 */
 function parseHolidayDates(holidaysStr: string): Set<string> {
   const dates = new Set<string>()
   if (!holidaysStr) return dates
@@ -244,7 +287,6 @@ function parseHolidayDates(holidaysStr: string): Set<string> {
   return dates
 }
 
-/** lecture_days 파싱: "(2월) 24, 26, 27\n(3월) 3, 5..." → Set<"yyyy-MM-dd"> */
 function parseLectureDates(lectureDays: string, startDate: string): Set<string> {
   const dates = new Set<string>()
   const startYear = parseInt(startDate.slice(0, 4))
@@ -264,7 +306,6 @@ function parseLectureDates(lectureDays: string, startDate: string): Set<string> 
   return dates
 }
 
-/** 한국어 요일 문자열 → JS getDay() 배열 */
 function parseDaysOfWeek(daysStr: string | null | undefined): number[] | null {
   if (!daysStr) return null
   const s = daysStr.trim()
