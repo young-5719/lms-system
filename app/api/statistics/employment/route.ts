@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 
 const AUTH_KEY = 'nu5MbqsELbZEf7UbhAxzdOTISoNSyWCe'
-const OUR_INSTITUTION = '그린컴퓨터'
+const INST_CODE = '200701633'
 
 function toHrdDate(dateStr: string): string {
   return dateStr.replace(/-/g, '')
@@ -33,21 +33,17 @@ async function fetchOurCourses(from: string, to: string): Promise<any[]> {
     try {
       const url =
         `https://hrd.work24.go.kr/hrdp/api/apipo/APIPO0101T.do` +
-        `?outType=1&sort=ASC&srchTraArea1=11` +
+        `?outType=1&sort=ASC` +
         `&srchTraStDt=${toHrdDate(from)}&srchTraEndDt=${toHrdDate(to)}` +
-        `&sortCol=2&authKey=${AUTH_KEY}&returnType=JSON&pageSize=100&pageNum=${page}`
+        `&sortCol=2&authKey=${AUTH_KEY}&returnType=JSON&pageSize=100&pageNum=${page}` +
+        `&srchTorgId=${INST_CODE}`
       const res = await fetch(url)
       const json = await res.json()
       if (!json.returnJSON) break
       const parsed = JSON.parse(json.returnJSON)
       const items: any[] = Array.isArray(parsed.srchList) ? parsed.srchList : []
       if (items.length === 0) break
-
-      for (const item of items) {
-        if (String(item.subTitle || '').includes(OUR_INSTITUTION)) {
-          allItems.push(item)
-        }
-      }
+      allItems.push(...items)
       if (items.length < 100) break
     } catch {
       break
