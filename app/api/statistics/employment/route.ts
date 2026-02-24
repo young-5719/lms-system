@@ -3,6 +3,9 @@ import { createClient } from '@/lib/supabase/server'
 
 const AUTH_KEY = 'nu5MbqsELbZEf7UbhAxzdOTISoNSyWCe'
 const INST_CODE = '200701633'
+const INST_NAME = '그린컴퓨터아트학원'
+const AREA1 = '11'       // 서울
+const AREA2 = '11530'    // 구로구
 
 function toHrdDate(dateStr: string): string {
   return dateStr.replace(/-/g, '')
@@ -34,6 +37,7 @@ async function fetchOurCourses(from: string, to: string): Promise<any[]> {
       const url =
         `https://hrd.work24.go.kr/hrdp/api/apipo/APIPO0101T.do` +
         `?outType=1&sort=ASC` +
+        `&srchTraArea1=${AREA1}&srchTraArea2=${AREA2}` +
         `&srchTraStDt=${toHrdDate(from)}&srchTraEndDt=${toHrdDate(to)}` +
         `&sortCol=2&authKey=${AUTH_KEY}&returnType=JSON&pageSize=100&pageNum=${page}` +
         `&srchTorgId=${INST_CODE}`
@@ -43,7 +47,9 @@ async function fetchOurCourses(from: string, to: string): Promise<any[]> {
       const parsed = JSON.parse(json.returnJSON)
       const items: any[] = Array.isArray(parsed.srchList) ? parsed.srchList : []
       if (items.length === 0) break
-      allItems.push(...items)
+      // 기관명으로 한 번 더 필터 (srchTorgId가 작동 안 할 경우 대비)
+      const ours = items.filter((item: any) => String(item.subTitle || '').includes(INST_NAME))
+      allItems.push(...ours)
       if (items.length < 100) break
     } catch {
       break
