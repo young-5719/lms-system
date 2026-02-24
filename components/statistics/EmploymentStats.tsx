@@ -19,6 +19,8 @@ interface CourseEmpl {
   courseName: string
   type: string
   typeLabel: string
+  startDate: string
+  endDate: string
   capacity: number
   applicants: number
   eiEmplRate3: string | null
@@ -218,6 +220,8 @@ export default function EmploymentStats({ from: initFrom, to: initTo }: { from: 
                     <TableRow>
                       <TableHead className="min-w-[280px]">과정명</TableHead>
                       <TableHead>구분</TableHead>
+                      <TableHead className="whitespace-nowrap">개강일</TableHead>
+                      <TableHead className="whitespace-nowrap">종강일</TableHead>
                       <TableHead className="text-right">정원</TableHead>
                       <TableHead className="text-right">신청자</TableHead>
                       <TableHead className="text-right">수료인원</TableHead>
@@ -230,6 +234,8 @@ export default function EmploymentStats({ from: initFrom, to: initTo }: { from: 
                       <TableRow key={i}>
                         <TableCell className="font-medium text-sm">{c.courseName}</TableCell>
                         <TableCell className="text-sm">{c.typeLabel || TYPE_LABEL[c.type] || c.type}</TableCell>
+                        <TableCell className="whitespace-nowrap text-sm">{c.startDate}</TableCell>
+                        <TableCell className="whitespace-nowrap text-sm">{c.endDate}</TableCell>
                         <TableCell className="text-right">{c.capacity > 0 ? c.capacity + '명' : '-'}</TableCell>
                         <TableCell className="text-right">{c.applicants > 0 ? c.applicants + '명' : '-'}</TableCell>
                         <TableCell className="text-right">{c.finiCnt != null ? c.finiCnt + '명' : '-'}</TableCell>

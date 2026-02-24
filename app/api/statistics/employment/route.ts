@@ -114,6 +114,8 @@ export async function GET(request: NextRequest) {
       courseName: string
       type: string
       typeLabel: string
+      startDate: string
+      endDate: string
       capacity: number
       applicants: number
       eiEmplRate3: string | null
@@ -137,6 +139,8 @@ export async function GET(request: NextRequest) {
           courseName: item.title || '-',
           type,
           typeLabel: TYPE_LABEL[type] || type,
+          startDate: item.traStartDate || '-',
+          endDate: item.traEndDate || '-',
           capacity: parseInt(item.yardMan || '0', 10),
           applicants: parseInt(item.regCourseMan || '0', 10),
           eiEmplRate3: emp.eiEmplRate3,
