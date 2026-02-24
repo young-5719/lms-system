@@ -5,7 +5,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Button } from '@/components/ui/button'
 
-const TYPE_ORDER = ['EMPLOYED', 'UNEMPLOYED', 'NATIONAL', 'GENERAL', 'ASSESSMENT', 'KDT', 'INDUSTRY']
+const TYPE_ORDER = ['NATIONAL', 'EMPLOYED', 'ASSESSMENT', 'INDUSTRY', 'KDT']
 
 interface TypeStat {
   type: string
@@ -36,8 +36,11 @@ interface EmploymentData {
 }
 
 const TYPE_LABEL: Record<string, string> = {
-  GENERAL: '일반', EMPLOYED: '재직자', UNEMPLOYED: '실업자',
-  NATIONAL: '국기', ASSESSMENT: '과평', KDT: 'KDT', INDUSTRY: '산대특',
+  NATIONAL: '국가기간전략산업직종',
+  EMPLOYED: '기업맞춤형훈련',
+  ASSESSMENT: '과정평가형훈련',
+  INDUSTRY: '산업구조변화대응',
+  KDT: 'K-디지털 트레이닝',
 }
 
 function fmt(n: number | null) {
@@ -51,7 +54,9 @@ function rateColor(n: number | null) {
   return 'font-semibold text-red-600'
 }
 
-export default function EmploymentStats({ from, to }: { from: string; to: string }) {
+export default function EmploymentStats({ from: initFrom, to: initTo }: { from: string; to: string }) {
+  const [from, setFrom] = useState(initFrom)
+  const [to, setTo] = useState(initTo)
   const [data, setData] = useState<EmploymentData | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -59,6 +64,7 @@ export default function EmploymentStats({ from, to }: { from: string; to: string
   async function fetchData() {
     setLoading(true)
     setError(null)
+    setData(null)
     try {
       const res = await fetch(`/api/statistics/employment?from=${from}&to=${to}`)
       if (!res.ok) throw new Error('조회 실패')
@@ -80,17 +86,37 @@ export default function EmploymentStats({ from, to }: { from: string; to: string
 
   return (
     <div className="space-y-4">
-      {/* 헤더 + 조회 버튼 */}
-      <div className="flex items-center justify-between">
-        <div>
+      {/* 헤더 + 날짜 + 조회 버튼 */}
+      <div className="flex flex-wrap items-end gap-4">
+        <div className="flex-1 min-w-0">
           <h3 className="text-lg font-semibold">취업률 현황</h3>
           <p className="text-sm text-muted-foreground">
-            HRD-Net 고용보험 기준 · 종료된 과정만 조회 가능 (최대 1분 소요)
+            HRD-Net 고용보험 기준 · 국기·기업맞춤·과정평가·산대특·KDT · 종료 과정만 조회 (최대 1분 소요)
           </p>
         </div>
-        <Button onClick={fetchData} disabled={loading} variant="outline">
-          {loading ? '조회 중...' : data ? '다시 조회' : '취업률 조회'}
-        </Button>
+        <div className="flex items-end gap-2">
+          <div>
+            <label className="text-xs font-medium mb-1 block text-muted-foreground">개강일 시작</label>
+            <input
+              type="date"
+              value={from}
+              onChange={(e) => setFrom(e.target.value)}
+              className="h-9 rounded-md border border-gray-300 px-3 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+            />
+          </div>
+          <div>
+            <label className="text-xs font-medium mb-1 block text-muted-foreground">개강일 종료</label>
+            <input
+              type="date"
+              value={to}
+              onChange={(e) => setTo(e.target.value)}
+              className="h-9 rounded-md border border-gray-300 px-3 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+            />
+          </div>
+          <Button onClick={fetchData} disabled={loading} variant="outline" className="h-9">
+            {loading ? '조회 중...' : '취업률 조회'}
+          </Button>
+        </div>
       </div>
 
       {error && (
