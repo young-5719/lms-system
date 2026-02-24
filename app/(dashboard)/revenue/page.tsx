@@ -212,7 +212,7 @@ export default function RevenuePage() {
             </Card>
             <Card className="border-orange-200">
               <CardContent className="pt-5 pb-5">
-                <p className="text-xs text-orange-500 font-medium mb-1">실업자 (×0.70)</p>
+                <p className="text-xs text-orange-500 font-medium mb-1">실업자 (×0.75)</p>
                 <p className="text-2xl font-bold text-orange-700">{formatWon(data.annualByType.UNEMPLOYED)}</p>
                 <p className="text-xs text-gray-400 mt-1">{formatWonFull(data.annualByType.UNEMPLOYED)}</p>
               </CardContent>

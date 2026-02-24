@@ -4,7 +4,7 @@ import { KOREAN_HOLIDAYS } from '@/lib/holidays'
 
 const TYPE_MULTIPLIER: Record<string, number> = {
   NATIONAL: 0.95,
-  UNEMPLOYED: 0.70,
+  UNEMPLOYED: 0.75,
   EMPLOYED: 0.60,
 }
 
