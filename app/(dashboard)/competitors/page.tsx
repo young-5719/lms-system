@@ -27,6 +27,7 @@ interface CompetitorItem {
   rawAcademy: string
   courseName: string
   round: string
+  trprId: string
   startDate: string
   endDate: string
   cost: number
@@ -37,6 +38,10 @@ interface CompetitorItem {
   ncsCode: string
   link: string
   applicants: number
+  eiEmplRate3: string | null
+  eiEmplRate6: string | null
+  hrdEmplRate6: string | null
+  finiCnt: number | null
 }
 
 interface ApiResponse {
@@ -300,6 +305,9 @@ export default function CompetitorsPage() {
                       <TableHead className="whitespace-nowrap text-right">자부담</TableHead>
                       <TableHead className="whitespace-nowrap text-right">정원</TableHead>
                       <TableHead className="whitespace-nowrap text-right">신청자</TableHead>
+                      <TableHead className="whitespace-nowrap text-right">수료인원</TableHead>
+                      <TableHead className="whitespace-nowrap text-right">취업률(3개월)</TableHead>
+                      <TableHead className="whitespace-nowrap text-right">취업률(6개월)</TableHead>
                       <TableHead className="whitespace-nowrap">주소</TableHead>
                     </TableRow>
                   </TableHeader>
@@ -341,6 +349,19 @@ export default function CompetitorsPage() {
                         <TableCell className="whitespace-nowrap text-right">{item.capacity}</TableCell>
                         <TableCell className="whitespace-nowrap text-right font-medium">
                           {item.applicants > 0 ? item.applicants + '명' : '-'}
+                        </TableCell>
+                        <TableCell className="whitespace-nowrap text-right">
+                          {item.finiCnt != null ? item.finiCnt + '명' : '-'}
+                        </TableCell>
+                        <TableCell className="whitespace-nowrap text-right">
+                          {item.eiEmplRate3 != null
+                            ? <span className={Number(item.eiEmplRate3) >= 50 ? 'text-green-600 font-semibold' : Number(item.eiEmplRate3) > 0 ? 'text-orange-500' : 'text-gray-400'}>{item.eiEmplRate3}%</span>
+                            : <span className="text-gray-300">-</span>}
+                        </TableCell>
+                        <TableCell className="whitespace-nowrap text-right">
+                          {item.eiEmplRate6 != null
+                            ? <span className={Number(item.eiEmplRate6) >= 50 ? 'text-green-600 font-semibold' : Number(item.eiEmplRate6) > 0 ? 'text-orange-500' : 'text-gray-400'}>{item.eiEmplRate6}%</span>
+                            : <span className="text-gray-300">-</span>}
                         </TableCell>
                         <TableCell className="text-sm text-muted-foreground whitespace-nowrap">
                           {item.address.length > 25 ? item.address.substring(0, 25) + '...' : item.address}

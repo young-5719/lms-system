@@ -3,6 +3,36 @@ import { createClient } from '@/lib/supabase/server'
 
 const AUTH_KEY = 'nu5MbqsELbZEf7UbhAxzdOTISoNSyWCe'
 
+interface EmploymentData {
+  eiEmplRate3: string | null
+  eiEmplRate6: string | null
+  hrdEmplRate6: string | null
+  finiCnt: number | null
+}
+
+async function fetchEmployment(trprId: string, trprDegr: string | number): Promise<EmploymentData> {
+  try {
+    const url = `https://hrd.work24.go.kr/hrdp/api/apipo/APIPO0103T.do?srchTrprId=${trprId}&outType=2&srchTrprDegr=${trprDegr}&authKey=${AUTH_KEY}&returnType=JSON&srchPart=2`
+    const res = await fetch(url, { signal: AbortSignal.timeout(5000) })
+    const json = await res.json()
+    if (json.returnJSON) {
+      const parsed = JSON.parse(json.returnJSON)
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        const d = parsed[0]
+        return {
+          eiEmplRate3: d.eiEmplRate3 ?? null,
+          eiEmplRate6: d.eiEmplRate6 ?? null,
+          hrdEmplRate6: d.hrdEmplRate6 ?? null,
+          finiCnt: d.finiCnt != null ? Number(d.finiCnt) : null,
+        }
+      }
+    }
+  } catch {
+    // timeout or parse error - skip
+  }
+  return { eiEmplRate3: null, eiEmplRate6: null, hrdEmplRate6: null, finiCnt: null }
+}
+
 const SEOUL_DISTRICT_CODES: Record<string, string> = {
   '서울 전체': '',
   '강남구': '11680',
@@ -143,6 +173,7 @@ export async function GET(request: NextRequest) {
           rawAcademy: academyName,
           courseName: item.title || '-',
           round: item.trprDegr || '-',
+          trprId: item.trprId || '',
           startDate: startDateStr,
           endDate: item.traEndDate || '-',
           cost: Number(item.courseMan || 0),
@@ -153,6 +184,10 @@ export async function GET(request: NextRequest) {
           ncsCode: item.ncsCd || '-',
           link: item.titleLink || '',
           applicants: regNum,
+          eiEmplRate3: null as string | null,
+          eiEmplRate6: null as string | null,
+          hrdEmplRate6: null as string | null,
+          finiCnt: null as number | null,
         })
       }
 
@@ -161,6 +196,24 @@ export async function GET(request: NextRequest) {
 
     // D-day 순 정렬
     allItems.sort((a, b) => a.dDayNum - b.dDayNum)
+
+    // 취업률 병렬 조회 (10개씩 배치)
+    const BATCH = 10
+    for (let i = 0; i < allItems.length; i += BATCH) {
+      const batch = allItems.slice(i, i + BATCH)
+      const results = await Promise.allSettled(
+        batch.map(item => fetchEmployment(item.trprId, item.round))
+      )
+      results.forEach((result, j) => {
+        if (result.status === 'fulfilled') {
+          const emp = result.value
+          allItems[i + j].eiEmplRate3 = emp.eiEmplRate3
+          allItems[i + j].eiEmplRate6 = emp.eiEmplRate6
+          allItems[i + j].hrdEmplRate6 = emp.hrdEmplRate6
+          allItems[i + j].finiCnt = emp.finiCnt
+        }
+      })
+    }
 
     return NextResponse.json({
       district,
