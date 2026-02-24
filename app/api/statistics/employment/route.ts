@@ -1,17 +1,73 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
-import { format } from 'date-fns'
 
 const AUTH_KEY = 'nu5MbqsELbZEf7UbhAxzdOTISoNSyWCe'
+const OUR_INSTITUTION = '그린컴퓨터'
 
-async function fetchEmploymentRate(courseCodeId: string, round: number): Promise<{
+function toHrdDate(dateStr: string): string {
+  return dateStr.replace(/-/g, '')
+}
+
+function getType(trainTarget: string): string | null {
+  if (trainTarget.includes('국가기간')) return 'NATIONAL'
+  if (trainTarget.includes('과정평가')) return 'ASSESSMENT'
+  if (trainTarget.includes('산업구조변화대응') || trainTarget.includes('산대특')) return 'INDUSTRY'
+  if (trainTarget.includes('KDT') || trainTarget.includes('K-디지털') || trainTarget.includes('디지털트레이닝')) return 'KDT'
+  return null
+}
+
+const ALLOWED_TYPES = ['NATIONAL', 'ASSESSMENT', 'INDUSTRY', 'KDT']
+
+const TYPE_LABEL: Record<string, string> = {
+  NATIONAL: '국가기간전략산업직종',
+  ASSESSMENT: '과정평가형훈련',
+  INDUSTRY: '산업구조변화대응',
+  KDT: 'K-디지털 트레이닝',
+}
+
+async function fetchOurCourses(from: string, to: string): Promise<any[]> {
+  const allItems: any[] = []
+  let page = 1
+
+  while (page <= 30) {
+    try {
+      const url =
+        `https://hrd.work24.go.kr/hrdp/api/apipo/APIPO0101T.do` +
+        `?outType=1&sort=ASC&srchTraArea1=11` +
+        `&srchTraStDt=${toHrdDate(from)}&srchTraEndDt=${toHrdDate(to)}` +
+        `&sortCol=2&authKey=${AUTH_KEY}&returnType=JSON&pageSize=100&pageNum=${page}`
+      const res = await fetch(url)
+      const json = await res.json()
+      if (!json.returnJSON) break
+      const parsed = JSON.parse(json.returnJSON)
+      const items: any[] = Array.isArray(parsed.srchList) ? parsed.srchList : []
+      if (items.length === 0) break
+
+      for (const item of items) {
+        if (String(item.subTitle || '').includes(OUR_INSTITUTION)) {
+          allItems.push(item)
+        }
+      }
+      if (items.length < 100) break
+    } catch {
+      break
+    }
+    page++
+  }
+
+  return allItems
+}
+
+async function fetchEmploymentRate(trprId: string, trprDegr: string | number): Promise<{
   eiEmplRate3: string | null
   eiEmplRate6: string | null
   finiCnt: number | null
-  totTrpCnt: number | null
 }> {
   try {
-    const url = `https://hrd.work24.go.kr/hrdp/api/apipo/APIPO0103T.do?srchTrprId=${courseCodeId}&outType=2&srchTrprDegr=${round}&authKey=${AUTH_KEY}&returnType=JSON&srchPart=2`
+    const url =
+      `https://hrd.work24.go.kr/hrdp/api/apipo/APIPO0103T.do` +
+      `?srchTrprId=${trprId}&outType=2&srchTrprDegr=${trprDegr}` +
+      `&authKey=${AUTH_KEY}&returnType=JSON&srchPart=2`
     const res = await fetch(url, { signal: AbortSignal.timeout(5000) })
     const json = await res.json()
     if (json.returnJSON) {
@@ -22,12 +78,11 @@ async function fetchEmploymentRate(courseCodeId: string, round: number): Promise
           eiEmplRate3: d.eiEmplRate3 != null && d.eiEmplRate3 !== '' ? String(d.eiEmplRate3) : null,
           eiEmplRate6: d.eiEmplRate6 != null && d.eiEmplRate6 !== '' ? String(d.eiEmplRate6) : null,
           finiCnt: d.finiCnt != null ? Number(d.finiCnt) : null,
-          totTrpCnt: d.totTrpCnt != null ? Number(d.totTrpCnt) : null,
         }
       }
     }
   } catch {}
-  return { eiEmplRate3: null, eiEmplRate6: null, finiCnt: null, totTrpCnt: null }
+  return { eiEmplRate3: null, eiEmplRate6: null, finiCnt: null }
 }
 
 export async function GET(request: NextRequest) {
@@ -37,68 +92,62 @@ export async function GET(request: NextRequest) {
     if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
     const { searchParams } = new URL(request.url)
-    const today = format(new Date(), 'yyyy-MM-dd')
-    const from = searchParams.get('from') || '2026-01-01'
-    const to = searchParams.get('to') || today
+    const today = new Date().toISOString().slice(0, 10)
+    const from = searchParams.get('from') || '2025-01-01'
+    const to = searchParams.get('to') || '2025-12-31'
 
-    // 개강일 범위 내 과정 조회 (course_code_id 있는 것만)
-    const { data: courses } = await supabase
-      .from('courses')
-      .select('course_name, type, course_code_id, round, end_date, capacity, current_students_gov, current_students_gen')
-      .gte('start_date', from)
-      .lte('start_date', to)
-      .not('course_code_id', 'is', null)
+    // 1. HRD-Net에서 우리 기관 과정 전체 조회
+    const allCourses = await fetchOurCourses(from, to)
 
-    // 국기·과정평가·산대특·KDT 유형 + 종료된 과정만 취업률 조회 가능
-    const ALLOWED_TYPES = ['NATIONAL', 'ASSESSMENT', 'INDUSTRY', 'KDT']
-    const endedCourses = (courses ?? []).filter(c =>
-      c.course_code_id && c.course_code_id !== '-' &&
-      c.end_date && c.end_date <= today &&
-      ALLOWED_TYPES.includes(c.type || '')
-    )
+    // 2. 종료된 과정 + 허용 훈련유형 필터
+    const endedCourses = allCourses.filter(item => {
+      const endDate = item.traEndDate || ''
+      if (!endDate || endDate >= today) return false
+      const type = getType(item.trainTarget || '')
+      return type !== null && ALLOWED_TYPES.includes(type)
+    })
 
-    // 10개씩 병렬 조회
+    // 3. 취업률 병렬 조회 (10개씩 배치)
     const results: Array<{
       courseName: string
       type: string
+      typeLabel: string
       capacity: number
-      students: number
+      applicants: number
       eiEmplRate3: string | null
       eiEmplRate6: string | null
       finiCnt: number | null
-      totTrpCnt: number | null
     }> = []
 
     const BATCH = 10
     for (let i = 0; i < endedCourses.length; i += BATCH) {
       const batch = endedCourses.slice(i, i + BATCH)
       const batchResults = await Promise.allSettled(
-        batch.map(c => fetchEmploymentRate(c.course_code_id!, c.round || 1))
+        batch.map(item => fetchEmploymentRate(item.trprId, item.trprDegr || 1))
       )
       batchResults.forEach((res, j) => {
-        const c = batch[j]
-        const emp = res.status === 'fulfilled' ? res.value : { eiEmplRate3: null, eiEmplRate6: null, finiCnt: null, totTrpCnt: null }
+        const item = batch[j]
+        const emp = res.status === 'fulfilled'
+          ? res.value
+          : { eiEmplRate3: null, eiEmplRate6: null, finiCnt: null }
+        const type = getType(item.trainTarget || '') || 'NATIONAL'
         results.push({
-          courseName: c.course_name,
-          type: c.type || 'GENERAL',
-          capacity: c.capacity || 0,
-          students: (c.current_students_gov || 0) + (c.current_students_gen || 0),
+          courseName: item.title || '-',
+          type,
+          typeLabel: TYPE_LABEL[type] || type,
+          capacity: parseInt(item.yardMan || '0', 10),
+          applicants: parseInt(item.regCourseMan || '0', 10),
           eiEmplRate3: emp.eiEmplRate3,
           eiEmplRate6: emp.eiEmplRate6,
           finiCnt: emp.finiCnt,
-          totTrpCnt: emp.totTrpCnt,
         })
       })
     }
 
-    // 취업률 데이터 있는 과정만
+    // 4. 취업률 데이터 있는 과정만
     const withData = results.filter(r => r.eiEmplRate6 != null || r.eiEmplRate3 != null)
 
-    // 구분별 집계
-    const TYPE_LABEL: Record<string, string> = {
-      GENERAL: '일반', EMPLOYED: '재직자', UNEMPLOYED: '실업자',
-      NATIONAL: '국기', ASSESSMENT: '과평', KDT: 'KDT', INDUSTRY: '산대특',
-    }
+    // 5. 구분별 집계
     const byType: Record<string, { rates3m: number[], rates6m: number[] }> = {}
     for (const r of withData) {
       if (!byType[r.type]) byType[r.type] = { rates3m: [], rates6m: [] }

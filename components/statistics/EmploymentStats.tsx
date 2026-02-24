@@ -18,12 +18,12 @@ interface TypeStat {
 interface CourseEmpl {
   courseName: string
   type: string
+  typeLabel: string
   capacity: number
-  students: number
+  applicants: number
   eiEmplRate3: string | null
   eiEmplRate6: string | null
   finiCnt: number | null
-  totTrpCnt: number | null
 }
 
 interface EmploymentData {
@@ -219,7 +219,7 @@ export default function EmploymentStats({ from: initFrom, to: initTo }: { from: 
                       <TableHead className="min-w-[280px]">과정명</TableHead>
                       <TableHead>구분</TableHead>
                       <TableHead className="text-right">정원</TableHead>
-                      <TableHead className="text-right">수강생</TableHead>
+                      <TableHead className="text-right">신청자</TableHead>
                       <TableHead className="text-right">수료인원</TableHead>
                       <TableHead className="text-right">취업률 (3개월)</TableHead>
                       <TableHead className="text-right">취업률 (6개월)</TableHead>
@@ -229,9 +229,9 @@ export default function EmploymentStats({ from: initFrom, to: initTo }: { from: 
                     {sortedCourses.map((c, i) => (
                       <TableRow key={i}>
                         <TableCell className="font-medium text-sm">{c.courseName}</TableCell>
-                        <TableCell className="text-sm">{TYPE_LABEL[c.type] || c.type}</TableCell>
+                        <TableCell className="text-sm">{c.typeLabel || TYPE_LABEL[c.type] || c.type}</TableCell>
                         <TableCell className="text-right">{c.capacity > 0 ? c.capacity + '명' : '-'}</TableCell>
-                        <TableCell className="text-right">{c.students > 0 ? c.students + '명' : '-'}</TableCell>
+                        <TableCell className="text-right">{c.applicants > 0 ? c.applicants + '명' : '-'}</TableCell>
                         <TableCell className="text-right">{c.finiCnt != null ? c.finiCnt + '명' : '-'}</TableCell>
                         <TableCell className="text-right">
                           <span className={rateColor(c.eiEmplRate3 != null ? Number(c.eiEmplRate3) : null)}>
