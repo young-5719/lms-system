@@ -135,8 +135,10 @@ export default function CompetitorsPage() {
   const filteredItems = data?.items.filter(item => {
     if (selectedType !== '전체' && item.trainType !== selectedType) return false
     if (selectedAcademy !== '전체' && item.academy !== selectedAcademy) return false
-    if (showEmplOnly && item.eiEmplRate6 == null && item.eiEmplRate3 == null) return false
-    if (searchText.trim() && !item.courseName.toLowerCase().includes(searchText.trim().toLowerCase())) return false
+    const hasEmplData = (item.eiEmplRate6 != null && item.eiEmplRate6 !== '') || (item.eiEmplRate3 != null && item.eiEmplRate3 !== '')
+    if (showEmplOnly && !hasEmplData) return false
+    const keyword = searchText.trim().toLowerCase()
+    if (keyword && !(item.courseName || '').toLowerCase().includes(keyword)) return false
     // 개강일이 선택 범위 안에 있는 과정만
     if (item.startDate && (item.startDate < startDate || item.startDate > endDate)) return false
     return true

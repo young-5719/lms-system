@@ -21,9 +21,9 @@ async function fetchEmployment(trprId: string, trprDegr: string | number): Promi
       if (Array.isArray(parsed) && parsed.length > 0) {
         const d = parsed[0]
         return {
-          eiEmplRate3: d.eiEmplRate3 ?? null,
-          eiEmplRate6: d.eiEmplRate6 ?? null,
-          hrdEmplRate6: d.hrdEmplRate6 ?? null,
+          eiEmplRate3: d.eiEmplRate3 != null && d.eiEmplRate3 !== '' ? String(d.eiEmplRate3) : null,
+          eiEmplRate6: d.eiEmplRate6 != null && d.eiEmplRate6 !== '' ? String(d.eiEmplRate6) : null,
+          hrdEmplRate6: d.hrdEmplRate6 != null && d.hrdEmplRate6 !== '' ? String(d.hrdEmplRate6) : null,
           finiCnt: d.finiCnt != null ? Number(d.finiCnt) : null,
           totTrpCnt: d.totTrpCnt != null ? Number(d.totTrpCnt) : null,
         }
