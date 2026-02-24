@@ -5,7 +5,7 @@ import { usePathname } from 'next/navigation'
 import {
   LayoutDashboard, BookOpen, ClipboardList, DoorOpen,
   CalendarDays, Users, BarChart3, Search,
-  FileText, TrendingUp, UserPlus, ChevronRight,
+  FileText, TrendingUp, UserPlus, ChevronRight, Briefcase,
 } from 'lucide-react'
 
 const NAV_SECTIONS = [
@@ -35,6 +35,7 @@ const NAV_SECTIONS = [
     items: [
       { href: '/instructors', label: '강사별 수업시간', icon: Users },
       { href: '/statistics', label: '통계', icon: BarChart3 },
+      { href: '/employment', label: '취업률 현황', icon: Briefcase },
       { href: '/revenue', label: '국비지원 예상매출', icon: TrendingUp },
       { href: '/competitors', label: '경쟁기관', icon: Search },
     ],
