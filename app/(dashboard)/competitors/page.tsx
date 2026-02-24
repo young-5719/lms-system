@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
@@ -42,6 +42,7 @@ interface CompetitorItem {
   eiEmplRate6: string | null
   hrdEmplRate6: string | null
   finiCnt: number | null
+  totTrpCnt: number | null
 }
 
 interface ApiResponse {
@@ -65,8 +66,26 @@ function toDateStr(d: Date): string {
 }
 
 export default function CompetitorsPage() {
+  const topScrollRef = useRef<HTMLDivElement>(null)
+  const tableScrollRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    const top = topScrollRef.current
+    const table = tableScrollRef.current
+    if (!top || !table) return
+    const syncFromTop = () => { table.scrollLeft = top.scrollLeft }
+    const syncFromTable = () => { top.scrollLeft = table.scrollLeft }
+    top.addEventListener('scroll', syncFromTop)
+    table.addEventListener('scroll', syncFromTable)
+    return () => {
+      top.removeEventListener('scroll', syncFromTop)
+      table.removeEventListener('scroll', syncFromTable)
+    }
+  })
+
   const [district, setDistrict] = useState('구로구')
   const [minOne, setMinOne] = useState(false)
+  const [showEmplOnly, setShowEmplOnly] = useState(false)
   const [selectedType, setSelectedType] = useState('전체')
   const [selectedAcademy, setSelectedAcademy] = useState('전체')
   const [startDate, setStartDate] = useState('2026-01-01')
@@ -113,10 +132,11 @@ export default function CompetitorsPage() {
     ? ['전체', ...Array.from(new Set(data.items.map(i => i.academy).filter(Boolean))).sort()]
     : ['전체']
 
-  // 훈련유형 + 학원 필터 적용
+  // 훈련유형 + 학원 + 취업률 필터 적용
   const filteredItems = data?.items.filter(item =>
     (selectedType === '전체' || item.trainType === selectedType) &&
-    (selectedAcademy === '전체' || item.academy === selectedAcademy)
+    (selectedAcademy === '전체' || item.academy === selectedAcademy) &&
+    (!showEmplOnly || item.eiEmplRate6 != null || item.eiEmplRate3 != null)
   ) ?? []
 
   // 학원별 통계
@@ -221,6 +241,16 @@ export default function CompetitorsPage() {
                 신청자 1명 이상만
               </label>
             </div>
+            <div className="flex items-center gap-2 h-10">
+              <Checkbox
+                id="showEmplOnly"
+                checked={showEmplOnly}
+                onCheckedChange={(checked) => setShowEmplOnly(checked === true)}
+              />
+              <label htmlFor="showEmplOnly" className="text-sm cursor-pointer">
+                취업률 집계된 과정만
+              </label>
+            </div>
             <Button onClick={fetchData} disabled={loading} variant="outline" className="h-10">
               {loading ? '조회 중...' : '새로고침'}
             </Button>
@@ -290,8 +320,13 @@ export default function CompetitorsPage() {
                 조건에 맞는 과정이 없습니다
               </div>
             ) : (
-              <div className="overflow-x-auto rounded-md border">
-                <Table className="min-w-[1400px]">
+              <>
+                {/* 상단 스크롤바 */}
+                <div ref={topScrollRef} className="overflow-x-auto mb-1">
+                  <div style={{ minWidth: '1600px', height: '1px' }} />
+                </div>
+              <div ref={tableScrollRef} className="overflow-x-auto rounded-md border">
+                <Table className="min-w-[1600px]">
                   <TableHeader>
                     <TableRow>
                       <TableHead className="whitespace-nowrap w-[80px]">D-Day</TableHead>
@@ -306,6 +341,7 @@ export default function CompetitorsPage() {
                       <TableHead className="whitespace-nowrap text-right">정원</TableHead>
                       <TableHead className="whitespace-nowrap text-right">신청자</TableHead>
                       <TableHead className="whitespace-nowrap text-right">수료인원</TableHead>
+                      <TableHead className="whitespace-nowrap text-right">수료율</TableHead>
                       <TableHead className="whitespace-nowrap text-right">취업률(3개월)</TableHead>
                       <TableHead className="whitespace-nowrap text-right">취업률(6개월)</TableHead>
                       <TableHead className="whitespace-nowrap">주소</TableHead>
@@ -354,6 +390,14 @@ export default function CompetitorsPage() {
                           {item.finiCnt != null ? item.finiCnt + '명' : '-'}
                         </TableCell>
                         <TableCell className="whitespace-nowrap text-right">
+                          {item.finiCnt != null && item.totTrpCnt != null && item.totTrpCnt > 0
+                            ? (() => {
+                                const rate = Math.round(item.finiCnt! / item.totTrpCnt! * 100)
+                                return <span className={rate >= 80 ? 'text-green-600 font-semibold' : rate >= 50 ? 'text-orange-500' : 'text-red-500'}>{rate}%</span>
+                              })()
+                            : <span className="text-gray-300">-</span>}
+                        </TableCell>
+                        <TableCell className="whitespace-nowrap text-right">
                           {item.eiEmplRate3 != null
                             ? <span className={Number(item.eiEmplRate3) >= 50 ? 'text-green-600 font-semibold' : Number(item.eiEmplRate3) > 0 ? 'text-orange-500' : 'text-gray-400'}>{item.eiEmplRate3}%</span>
                             : <span className="text-gray-300">-</span>}
@@ -371,6 +415,7 @@ export default function CompetitorsPage() {
                   </TableBody>
                 </Table>
               </div>
+              </>
             )}
           </CardContent>
         </Card>

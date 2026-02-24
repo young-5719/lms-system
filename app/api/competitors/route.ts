@@ -8,6 +8,7 @@ interface EmploymentData {
   eiEmplRate6: string | null
   hrdEmplRate6: string | null
   finiCnt: number | null
+  totTrpCnt: number | null
 }
 
 async function fetchEmployment(trprId: string, trprDegr: string | number): Promise<EmploymentData> {
@@ -24,13 +25,14 @@ async function fetchEmployment(trprId: string, trprDegr: string | number): Promi
           eiEmplRate6: d.eiEmplRate6 ?? null,
           hrdEmplRate6: d.hrdEmplRate6 ?? null,
           finiCnt: d.finiCnt != null ? Number(d.finiCnt) : null,
+          totTrpCnt: d.totTrpCnt != null ? Number(d.totTrpCnt) : null,
         }
       }
     }
   } catch {
     // timeout or parse error - skip
   }
-  return { eiEmplRate3: null, eiEmplRate6: null, hrdEmplRate6: null, finiCnt: null }
+  return { eiEmplRate3: null, eiEmplRate6: null, hrdEmplRate6: null, finiCnt: null, totTrpCnt: null }
 }
 
 const SEOUL_DISTRICT_CODES: Record<string, string> = {
@@ -188,6 +190,7 @@ export async function GET(request: NextRequest) {
           eiEmplRate6: null as string | null,
           hrdEmplRate6: null as string | null,
           finiCnt: null as number | null,
+          totTrpCnt: null as number | null,
         })
       }
 
@@ -211,6 +214,7 @@ export async function GET(request: NextRequest) {
           allItems[i + j].eiEmplRate6 = emp.eiEmplRate6
           allItems[i + j].hrdEmplRate6 = emp.hrdEmplRate6
           allItems[i + j].finiCnt = emp.finiCnt
+          allItems[i + j].totTrpCnt = emp.totTrpCnt
         }
       })
     }
