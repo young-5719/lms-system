@@ -393,9 +393,9 @@ export default function CompetitorsPage() {
                           {item.finiCnt != null ? item.finiCnt + '명' : '-'}
                         </TableCell>
                         <TableCell className="whitespace-nowrap text-right">
-                          {item.finiCnt != null && item.totTrpCnt != null && item.totTrpCnt > 0
+                          {item.finiCnt != null && item.applicants > 0
                             ? (() => {
-                                const rate = Math.round(item.finiCnt! / item.totTrpCnt! * 100)
+                                const rate = Math.round(item.finiCnt! / item.applicants * 100)
                                 return <span className={rate >= 80 ? 'text-green-600 font-semibold' : rate >= 50 ? 'text-orange-500' : 'text-red-500'}>{rate}%</span>
                               })()
                             : <span className="text-gray-300">-</span>}
