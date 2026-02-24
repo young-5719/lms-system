@@ -84,10 +84,10 @@ export default function CompetitorsPage() {
   })
 
   const [district, setDistrict] = useState('구로구')
-  const [minOne, setMinOne] = useState(false)
   const [showEmplOnly, setShowEmplOnly] = useState(false)
   const [selectedType, setSelectedType] = useState('전체')
   const [selectedAcademy, setSelectedAcademy] = useState('전체')
+  const [searchText, setSearchText] = useState('')
   const [startDate, setStartDate] = useState('2026-01-01')
   const [endDate, setEndDate] = useState(() => {
     const d = new Date()
@@ -102,8 +102,7 @@ export default function CompetitorsPage() {
     setLoading(true)
     setError(null)
     try {
-      const params = new URLSearchParams({ district, startDate, endDate })
-      if (minOne) params.set('minOne', 'true')
+      const params = new URLSearchParams({ district, startDate, endDate, minOne: 'true' })
       const res = await fetch(`/api/competitors?${params}`)
       if (!res.ok) {
         const err = await res.json()
@@ -116,7 +115,7 @@ export default function CompetitorsPage() {
     } finally {
       setLoading(false)
     }
-  }, [district, minOne, startDate, endDate])
+  }, [district, startDate, endDate])
 
   useEffect(() => {
     fetchData()
@@ -132,12 +131,16 @@ export default function CompetitorsPage() {
     ? ['전체', ...Array.from(new Set(data.items.map(i => i.academy).filter(Boolean))).sort()]
     : ['전체']
 
-  // 훈련유형 + 학원 + 취업률 필터 적용
-  const filteredItems = data?.items.filter(item =>
-    (selectedType === '전체' || item.trainType === selectedType) &&
-    (selectedAcademy === '전체' || item.academy === selectedAcademy) &&
-    (!showEmplOnly || item.eiEmplRate6 != null || item.eiEmplRate3 != null)
-  ) ?? []
+  // 전체 필터 적용 (클라이언트 사이드)
+  const filteredItems = data?.items.filter(item => {
+    if (selectedType !== '전체' && item.trainType !== selectedType) return false
+    if (selectedAcademy !== '전체' && item.academy !== selectedAcademy) return false
+    if (showEmplOnly && item.eiEmplRate6 == null && item.eiEmplRate3 == null) return false
+    if (searchText.trim() && !item.courseName.toLowerCase().includes(searchText.trim().toLowerCase())) return false
+    // 개강일이 선택 범위 안에 있는 과정만
+    if (item.startDate && (item.startDate < startDate || item.startDate > endDate)) return false
+    return true
+  }) ?? []
 
   // 학원별 통계
   const academyStats = filteredItems.reduce((acc, item) => {
@@ -231,17 +234,17 @@ export default function CompetitorsPage() {
                 </Select>
               </div>
             </div>
-            <div className="flex items-center gap-2 h-10">
-              <Checkbox
-                id="minOne"
-                checked={minOne}
-                onCheckedChange={(checked) => setMinOne(checked === true)}
+            <div>
+              <label className="text-sm font-medium mb-1 block">과정명 검색</label>
+              <input
+                type="text"
+                value={searchText}
+                onChange={(e) => setSearchText(e.target.value)}
+                placeholder="과정명 입력..."
+                className="h-10 w-48 rounded-md border border-gray-300 px-3 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
               />
-              <label htmlFor="minOne" className="text-sm cursor-pointer">
-                신청자 1명 이상만
-              </label>
             </div>
-            <div className="flex items-center gap-2 h-10">
+            <div className="flex items-center gap-2 h-10 mt-5">
               <Checkbox
                 id="showEmplOnly"
                 checked={showEmplOnly}
