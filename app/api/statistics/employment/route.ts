@@ -49,8 +49,8 @@ export async function GET(request: NextRequest) {
       .lte('start_date', to)
       .not('course_code_id', 'is', null)
 
-    // 국기·기업맞춤·과정평가·산대특·KDT 유형 + 종료된 과정만 취업률 조회 가능
-    const ALLOWED_TYPES = ['NATIONAL', 'EMPLOYED', 'ASSESSMENT', 'INDUSTRY', 'KDT']
+    // 국기·과정평가·산대특·KDT 유형 + 종료된 과정만 취업률 조회 가능
+    const ALLOWED_TYPES = ['NATIONAL', 'ASSESSMENT', 'INDUSTRY', 'KDT']
     const endedCourses = (courses ?? []).filter(c =>
       c.course_code_id && c.course_code_id !== '-' &&
       c.end_date && c.end_date <= today &&

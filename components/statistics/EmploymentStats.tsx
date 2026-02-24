@@ -5,7 +5,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Button } from '@/components/ui/button'
 
-const TYPE_ORDER = ['NATIONAL', 'EMPLOYED', 'ASSESSMENT', 'INDUSTRY', 'KDT']
+const TYPE_ORDER = ['NATIONAL', 'ASSESSMENT', 'INDUSTRY', 'KDT']
 
 interface TypeStat {
   type: string
@@ -37,7 +37,6 @@ interface EmploymentData {
 
 const TYPE_LABEL: Record<string, string> = {
   NATIONAL: '국가기간전략산업직종',
-  EMPLOYED: '기업맞춤형훈련',
   ASSESSMENT: '과정평가형훈련',
   INDUSTRY: '산업구조변화대응',
   KDT: 'K-디지털 트레이닝',
@@ -55,8 +54,9 @@ function rateColor(n: number | null) {
 }
 
 export default function EmploymentStats({ from: initFrom, to: initTo }: { from: string; to: string }) {
-  const [from, setFrom] = useState(initFrom)
-  const [to, setTo] = useState(initTo)
+  // 취업률은 과정 종료 후 3~6개월 뒤 집계 → 기본값은 전년도 과정 기준
+  const [from, setFrom] = useState(initFrom < '2026-01-01' ? initFrom : '2025-01-01')
+  const [to, setTo] = useState(initTo < '2026-01-01' ? initTo : '2025-12-31')
   const [data, setData] = useState<EmploymentData | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
