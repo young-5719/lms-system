@@ -9,6 +9,7 @@ import {
   TableRow,
 } from '@/components/ui/table'
 import StatisticsFilter from '@/components/statistics/StatisticsFilter'
+import EmploymentStats from '@/components/statistics/EmploymentStats'
 import { format } from 'date-fns'
 
 const TYPE_LABEL: Record<string, string> = {
@@ -341,6 +342,9 @@ export default async function StatisticsPage({
           </Table>
         </CardContent>
       </Card>
+
+      {/* 취업률 현황 */}
+      <EmploymentStats from={from} to={to} />
 
       {/* 모집률 상위 과정 */}
       <Card>
