@@ -31,24 +31,28 @@ const TYPE_LABEL: Record<string, string> = {
 }
 
 // HRD-Net 과정 목록 조회
-// - srchTraArea1(서울) + srchTorgId(기관코드)로 기관 과정 조회
-// - srchTraStDt=20200101 로 개강일 범위를 넓게 잡아 누락 방지
-// - 클라이언트에서 종강일(traEndDate)이 [from, to] 범위인 과정만 필터
+// - srchTorgId 파라미터는 API에서 무시됨 (디버그로 확인)
+// - srchTraArea1+Area2(구로구)로 범위 제한 후 instCd로 기관 필터
+// - 클라이언트에서 traEndDate가 [from, to] 범위인 과정만 필터
 async function fetchOurCourses(from: string, to: string): Promise<any[]> {
   const allItems: any[] = []
   let page = 1
   const fromHrd = toHrdDate(from)
   const toHrd = toHrdDate(to)
 
+  // 최장 3년짜리 과정도 잡기 위해 srchTraStDt를 3년 전으로
+  const broadFrom = new Date(from)
+  broadFrom.setFullYear(broadFrom.getFullYear() - 3)
+  const broadFromHrd = toHrdDate(broadFrom.toISOString().slice(0, 10))
+
   while (page <= 30) {
     try {
       const url =
         `https://hrd.work24.go.kr/hrdp/api/apipo/APIPO0101T.do` +
         `?outType=1&sort=ASC&sortCol=2` +
-        `&srchTraArea1=${AREA1}` +
-        `&srchTraStDt=20200101&srchTraEndDt=${toHrd}` +
-        `&authKey=${AUTH_KEY}&returnType=JSON&pageSize=100&pageNum=${page}` +
-        `&srchTorgId=${INST_CODE}`
+        `&srchTraArea1=${AREA1}&srchTraArea2=${AREA2}` +
+        `&srchTraStDt=${broadFromHrd}&srchTraEndDt=${toHrd}` +
+        `&authKey=${AUTH_KEY}&returnType=JSON&pageSize=100&pageNum=${page}`
       const res = await fetch(url, { signal: AbortSignal.timeout(15000) })
       const json = await res.json()
       if (!json.returnJSON) break
@@ -56,10 +60,14 @@ async function fetchOurCourses(from: string, to: string): Promise<any[]> {
       const items: any[] = Array.isArray(parsed.srchList) ? parsed.srchList : []
       if (items.length === 0) break
 
-      // 종강일이 [from, to] 범위인 과정만 수집
+      // instCd로 기관 필터 + 종강일이 [from, to] 범위인 과정만
       const ours = items.filter((item: any) => {
         const endDate = item.traEndDate || ''
-        return endDate >= fromHrd && endDate <= toHrd
+        return (
+          item.instCd === INST_CODE &&
+          endDate >= fromHrd &&
+          endDate <= toHrd
+        )
       })
       allItems.push(...ours)
       if (items.length < 100) break
