@@ -16,16 +16,18 @@ function getType(trainTarget: string): string | null {
   if (trainTarget.includes('과정평가')) return 'ASSESSMENT'
   if (trainTarget.includes('산업구조변화대응') || trainTarget.includes('산대특')) return 'INDUSTRY'
   if (trainTarget.includes('KDT') || trainTarget.includes('K-디지털') || trainTarget.includes('디지털트레이닝')) return 'KDT'
+  if (trainTarget.includes('기업맞춤')) return 'CORPORATE'
   return null
 }
 
-const ALLOWED_TYPES = ['NATIONAL', 'ASSESSMENT', 'INDUSTRY', 'KDT']
+const ALLOWED_TYPES = ['NATIONAL', 'ASSESSMENT', 'INDUSTRY', 'KDT', 'CORPORATE']
 
 const TYPE_LABEL: Record<string, string> = {
   NATIONAL: '국가기간전략산업직종',
   ASSESSMENT: '과정평가형훈련',
   INDUSTRY: '산업구조변화대응',
   KDT: 'K-디지털 트레이닝',
+  CORPORATE: '기업맞춤형훈련',
 }
 
 // HRD-Net 과정 목록 조회 (종강일 기준 필터)

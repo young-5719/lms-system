@@ -6,7 +6,7 @@ export default function EmploymentPage() {
       <div>
         <h2 className="text-2xl md:text-3xl font-bold tracking-tight">취업률 현황</h2>
         <p className="text-muted-foreground">
-          HRD-Net 고용보험 기준 · 국가기간전략산업직종 · 과정평가형 · 산업구조변화대응 · K-디지털 트레이닝
+          HRD-Net 고용보험 기준 · 국가기간전략산업직종 · 과정평가형 · 기업맞춤형훈련 · 산업구조변화대응 · K-디지털 트레이닝
         </p>
       </div>
       <EmploymentStats from="2025-01-01" to="2025-12-31" />

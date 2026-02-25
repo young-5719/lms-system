@@ -5,13 +5,14 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Button } from '@/components/ui/button'
 
-const TYPE_ORDER = ['NATIONAL', 'ASSESSMENT', 'INDUSTRY', 'KDT']
+const TYPE_ORDER = ['NATIONAL', 'ASSESSMENT', 'INDUSTRY', 'KDT', 'CORPORATE']
 
 const TYPE_SHORT: Record<string, string> = {
   NATIONAL: '국기',
   ASSESSMENT: '과평',
   INDUSTRY: '산대특',
   KDT: 'KDT',
+  CORPORATE: '기업맞춤',
 }
 
 const TYPE_BADGE: Record<string, string> = {
@@ -19,6 +20,7 @@ const TYPE_BADGE: Record<string, string> = {
   ASSESSMENT: 'bg-purple-100 text-purple-700',
   INDUSTRY: 'bg-orange-100 text-orange-700',
   KDT: 'bg-green-100 text-green-700',
+  CORPORATE: 'bg-teal-100 text-teal-700',
 }
 
 interface TypeStat {
