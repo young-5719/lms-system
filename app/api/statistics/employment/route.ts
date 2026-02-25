@@ -30,37 +30,33 @@ const TYPE_LABEL: Record<string, string> = {
   CORPORATE: '기업맞춤형훈련',
 }
 
-// HRD-Net 과정 목록 조회 (종강일 기준 필터)
-// 종강일이 [from, to] 범위에 포함된 과정만 반환
-// HRD-Net 검색 범위는 2년 전 개강까지 포함해 긴 과정도 누락 없이 수집
+// HRD-Net 과정 목록 조회
+// - srchTraArea1(서울) + srchTorgId(기관코드)로 기관 과정 조회
+// - srchTraStDt=20200101 로 개강일 범위를 넓게 잡아 누락 방지
+// - 클라이언트에서 종강일(traEndDate)이 [from, to] 범위인 과정만 필터
 async function fetchOurCourses(from: string, to: string): Promise<any[]> {
   const allItems: any[] = []
   let page = 1
   const fromHrd = toHrdDate(from)
   const toHrd = toHrdDate(to)
 
-  // 최장 2년짜리 과정도 포함되도록 srchTraStDt를 2년 전으로 설정
-  const broadFrom = new Date(from)
-  broadFrom.setFullYear(broadFrom.getFullYear() - 2)
-  const broadFromHrd = toHrdDate(broadFrom.toISOString().slice(0, 10))
-
   while (page <= 30) {
     try {
-      // srchTorgId로 기관 필터링하므로 area 필터 불필요, subTitle 체크 제거
       const url =
         `https://hrd.work24.go.kr/hrdp/api/apipo/APIPO0101T.do` +
-        `?outType=1&sort=ASC` +
-        `&srchTraStDt=${broadFromHrd}&srchTraEndDt=${toHrd}` +
-        `&sortCol=2&authKey=${AUTH_KEY}&returnType=JSON&pageSize=100&pageNum=${page}` +
+        `?outType=1&sort=ASC&sortCol=2` +
+        `&srchTraArea1=${AREA1}` +
+        `&srchTraStDt=20200101&srchTraEndDt=${toHrd}` +
+        `&authKey=${AUTH_KEY}&returnType=JSON&pageSize=100&pageNum=${page}` +
         `&srchTorgId=${INST_CODE}`
-      const res = await fetch(url)
+      const res = await fetch(url, { signal: AbortSignal.timeout(15000) })
       const json = await res.json()
       if (!json.returnJSON) break
       const parsed = JSON.parse(json.returnJSON)
       const items: any[] = Array.isArray(parsed.srchList) ? parsed.srchList : []
       if (items.length === 0) break
 
-      // 종강일이 조회 기간 내에 포함된 과정만 (기관 필터는 API에서 srchTorgId로 처리)
+      // 종강일이 [from, to] 범위인 과정만 수집
       const ours = items.filter((item: any) => {
         const endDate = item.traEndDate || ''
         return endDate >= fromHrd && endDate <= toHrd
