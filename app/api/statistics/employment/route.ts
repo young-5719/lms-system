@@ -60,14 +60,13 @@ async function fetchOurCourses(from: string, to: string): Promise<any[]> {
       const items: any[] = Array.isArray(parsed.srchList) ? parsed.srchList : []
       if (items.length === 0) break
 
-      // instCd로 기관 필터 + 종강일이 [from, to] 범위인 과정만
+      // 기관 필터(instCd 또는 subTitle 기관명 포함) + 종강일이 [from, to] 범위인 과정만
       const ours = items.filter((item: any) => {
         const endDate = item.traEndDate || ''
-        return (
-          item.instCd === INST_CODE &&
-          endDate >= fromHrd &&
-          endDate <= toHrd
-        )
+        const isOurInst =
+          item.instCd === INST_CODE ||
+          String(item.subTitle || '').includes(INST_NAME)
+        return isOurInst && endDate >= fromHrd && endDate <= toHrd
       })
       allItems.push(...ours)
       if (items.length < 100) break
