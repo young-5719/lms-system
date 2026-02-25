@@ -71,14 +71,13 @@ async function fetchOurCourses(from: string, to: string): Promise<any[]> {
   return allItems
 }
 
-// srchPart=1(훈련실적): finiCnt, satisfyScore
+// srchPart=1(훈련실적): finiCnt
 // srchPart=2(취업현황): eiEmplRate3, eiEmplRate6
-// 두 파트를 병렬 조회하여 병합
+// 만족도(satisfyScore)는 APIPO0101T의 stdgScor 필드로 별도 제공됨
 async function fetchCourseStats(trprId: string, trprDegr: string | number): Promise<{
   eiEmplRate3: string | null
   eiEmplRate6: string | null
   finiCnt: number | null
-  satisfyScore: number | null
 }> {
   const baseUrl =
     `https://hrd.work24.go.kr/hrdp/api/apipo/APIPO0103T.do` +
@@ -88,7 +87,6 @@ async function fetchCourseStats(trprId: string, trprDegr: string | number): Prom
   let eiEmplRate3: string | null = null
   let eiEmplRate6: string | null = null
   let finiCnt: number | null = null
-  let satisfyScore: number | null = null
 
   try {
     const [r1, r2] = await Promise.allSettled([
@@ -96,17 +94,16 @@ async function fetchCourseStats(trprId: string, trprDegr: string | number): Prom
       fetch(baseUrl + '&srchPart=2', { signal: AbortSignal.timeout(8000) }).then(r => r.json()),
     ])
 
-    // srchPart=1: 훈련실적 (수료인원, 만족도)
+    // srchPart=1: 훈련실적 (수료인원)
     if (r1.status === 'fulfilled' && r1.value?.returnJSON) {
       const parsed = JSON.parse(r1.value.returnJSON)
       if (Array.isArray(parsed) && parsed.length > 0) {
         const d = parsed[0]
         if (d.finiCnt != null && d.finiCnt !== '') finiCnt = Number(d.finiCnt)
-        if (d.satisfyScore != null && d.satisfyScore !== '') satisfyScore = Number(d.satisfyScore)
       }
     }
 
-    // srchPart=2: 취업현황 (취업률, fallback finiCnt/satisfyScore)
+    // srchPart=2: 취업현황 (취업률, fallback finiCnt)
     if (r2.status === 'fulfilled' && r2.value?.returnJSON) {
       const parsed = JSON.parse(r2.value.returnJSON)
       if (Array.isArray(parsed) && parsed.length > 0) {
@@ -114,12 +111,11 @@ async function fetchCourseStats(trprId: string, trprDegr: string | number): Prom
         if (d.eiEmplRate3 != null && d.eiEmplRate3 !== '') eiEmplRate3 = String(d.eiEmplRate3)
         if (d.eiEmplRate6 != null && d.eiEmplRate6 !== '') eiEmplRate6 = String(d.eiEmplRate6)
         if (finiCnt == null && d.finiCnt != null && d.finiCnt !== '') finiCnt = Number(d.finiCnt)
-        if (satisfyScore == null && d.satisfyScore != null && d.satisfyScore !== '') satisfyScore = Number(d.satisfyScore)
       }
     }
   } catch {}
 
-  return { eiEmplRate3, eiEmplRate6, finiCnt, satisfyScore }
+  return { eiEmplRate3, eiEmplRate6, finiCnt }
 }
 
 export async function GET(request: NextRequest) {
@@ -170,8 +166,12 @@ export async function GET(request: NextRequest) {
         const item = batch[j]
         const stats = res.status === 'fulfilled'
           ? res.value
-          : { eiEmplRate3: null, eiEmplRate6: null, finiCnt: null, satisfyScore: null }
+          : { eiEmplRate3: null, eiEmplRate6: null, finiCnt: null }
         const type = getType(item.trainTarget || '') || 'NATIONAL'
+        // 만족도: APIPO0101T의 stdgScor 필드 (훈련기관 평가점수, 100점 만점)
+        const satisfyScore = item.stdgScor != null && item.stdgScor !== ''
+          ? Number(item.stdgScor)
+          : null
         results.push({
           courseName: item.title || '-',
           trprDegr: parseInt(item.trprDegr || '1', 10),
@@ -184,7 +184,7 @@ export async function GET(request: NextRequest) {
           eiEmplRate3: stats.eiEmplRate3,
           eiEmplRate6: stats.eiEmplRate6,
           finiCnt: stats.finiCnt,
-          satisfyScore: stats.satisfyScore,
+          satisfyScore,
         })
       })
     }
