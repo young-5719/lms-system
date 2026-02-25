@@ -188,7 +188,7 @@ export default function EmploymentStats({ from: initFrom, to: initTo }: { from: 
               <CardContent className="pt-4 pb-3">
                 <p className="text-xs text-muted-foreground mb-1">조회 과정</p>
                 <div className="text-2xl font-bold">{data.totalQueried}<span className="text-sm font-normal text-muted-foreground ml-1">개</span></div>
-                <p className="text-xs text-muted-foreground mt-0.5">종료된 과정</p>
+                <p className="text-xs text-muted-foreground mt-0.5">종강일 기간 내 과정</p>
               </CardContent>
             </Card>
             <Card className="bg-slate-50">
