@@ -17,6 +17,7 @@ interface TypeStat {
 
 interface CourseEmpl {
   courseName: string
+  trprDegr: number
   type: string
   typeLabel: string
   startDate: string
@@ -250,6 +251,7 @@ export default function EmploymentStats({ from: initFrom, to: initTo }: { from: 
                   <TableHeader>
                     <TableRow>
                       <TableHead className="min-w-[280px]">과정명</TableHead>
+                      <TableHead className="text-center whitespace-nowrap">회차</TableHead>
                       <TableHead>구분</TableHead>
                       <TableHead className="whitespace-nowrap">개강일</TableHead>
                       <TableHead className="whitespace-nowrap">종강일</TableHead>
@@ -270,6 +272,11 @@ export default function EmploymentStats({ from: initFrom, to: initTo }: { from: 
                       return (
                         <TableRow key={i}>
                           <TableCell className="font-medium text-sm">{c.courseName}</TableCell>
+                          <TableCell className="text-center text-sm">
+                            <span className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-slate-100 text-slate-600 text-xs font-semibold">
+                              {c.trprDegr}
+                            </span>
+                          </TableCell>
                           <TableCell className="text-sm">{c.typeLabel || TYPE_LABEL[c.type] || c.type}</TableCell>
                           <TableCell className="whitespace-nowrap text-sm">{c.startDate}</TableCell>
                           <TableCell className="whitespace-nowrap text-sm">{c.endDate}</TableCell>

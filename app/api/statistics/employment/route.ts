@@ -28,9 +28,12 @@ const TYPE_LABEL: Record<string, string> = {
   KDT: 'K-디지털 트레이닝',
 }
 
+// HRD-Net 과정 목록 조회 (개강일 기준 필터)
 async function fetchOurCourses(from: string, to: string): Promise<any[]> {
   const allItems: any[] = []
   let page = 1
+  const fromHrd = toHrdDate(from)
+  const toHrd = toHrdDate(to)
 
   while (page <= 30) {
     try {
@@ -38,7 +41,7 @@ async function fetchOurCourses(from: string, to: string): Promise<any[]> {
         `https://hrd.work24.go.kr/hrdp/api/apipo/APIPO0101T.do` +
         `?outType=1&sort=ASC` +
         `&srchTraArea1=${AREA1}&srchTraArea2=${AREA2}` +
-        `&srchTraStDt=${toHrdDate(from)}&srchTraEndDt=${toHrdDate(to)}` +
+        `&srchTraStDt=${fromHrd}&srchTraEndDt=${toHrd}` +
         `&sortCol=2&authKey=${AUTH_KEY}&returnType=JSON&pageSize=100&pageNum=${page}` +
         `&srchTorgId=${INST_CODE}`
       const res = await fetch(url)
@@ -47,8 +50,16 @@ async function fetchOurCourses(from: string, to: string): Promise<any[]> {
       const parsed = JSON.parse(json.returnJSON)
       const items: any[] = Array.isArray(parsed.srchList) ? parsed.srchList : []
       if (items.length === 0) break
-      // 기관명으로 한 번 더 필터 (srchTorgId가 작동 안 할 경우 대비)
-      const ours = items.filter((item: any) => String(item.subTitle || '').includes(INST_NAME))
+
+      // 기관명 필터 + 개강일이 조회 기간 내에 포함된 과정만
+      const ours = items.filter((item: any) => {
+        const startDate = item.traStartDate || ''
+        return (
+          String(item.subTitle || '').includes(INST_NAME) &&
+          startDate >= fromHrd &&
+          startDate <= toHrd
+        )
+      })
       allItems.push(...ours)
       if (items.length < 100) break
     } catch {
@@ -60,33 +71,55 @@ async function fetchOurCourses(from: string, to: string): Promise<any[]> {
   return allItems
 }
 
-async function fetchEmploymentRate(trprId: string, trprDegr: string | number): Promise<{
+// srchPart=1(훈련실적): finiCnt, satisfyScore
+// srchPart=2(취업현황): eiEmplRate3, eiEmplRate6
+// 두 파트를 병렬 조회하여 병합
+async function fetchCourseStats(trprId: string, trprDegr: string | number): Promise<{
   eiEmplRate3: string | null
   eiEmplRate6: string | null
   finiCnt: number | null
   satisfyScore: number | null
 }> {
+  const baseUrl =
+    `https://hrd.work24.go.kr/hrdp/api/apipo/APIPO0103T.do` +
+    `?srchTrprId=${trprId}&outType=2&srchTrprDegr=${trprDegr}` +
+    `&authKey=${AUTH_KEY}&returnType=JSON`
+
+  let eiEmplRate3: string | null = null
+  let eiEmplRate6: string | null = null
+  let finiCnt: number | null = null
+  let satisfyScore: number | null = null
+
   try {
-    const url =
-      `https://hrd.work24.go.kr/hrdp/api/apipo/APIPO0103T.do` +
-      `?srchTrprId=${trprId}&outType=2&srchTrprDegr=${trprDegr}` +
-      `&authKey=${AUTH_KEY}&returnType=JSON&srchPart=2`
-    const res = await fetch(url, { signal: AbortSignal.timeout(5000) })
-    const json = await res.json()
-    if (json.returnJSON) {
-      const parsed = JSON.parse(json.returnJSON)
+    const [r1, r2] = await Promise.allSettled([
+      fetch(baseUrl + '&srchPart=1', { signal: AbortSignal.timeout(8000) }).then(r => r.json()),
+      fetch(baseUrl + '&srchPart=2', { signal: AbortSignal.timeout(8000) }).then(r => r.json()),
+    ])
+
+    // srchPart=1: 훈련실적 (수료인원, 만족도)
+    if (r1.status === 'fulfilled' && r1.value?.returnJSON) {
+      const parsed = JSON.parse(r1.value.returnJSON)
       if (Array.isArray(parsed) && parsed.length > 0) {
         const d = parsed[0]
-        return {
-          eiEmplRate3: d.eiEmplRate3 != null && d.eiEmplRate3 !== '' ? String(d.eiEmplRate3) : null,
-          eiEmplRate6: d.eiEmplRate6 != null && d.eiEmplRate6 !== '' ? String(d.eiEmplRate6) : null,
-          finiCnt: d.finiCnt != null ? Number(d.finiCnt) : null,
-          satisfyScore: d.satisfyScore != null && d.satisfyScore !== '' ? Number(d.satisfyScore) : null,
-        }
+        if (d.finiCnt != null && d.finiCnt !== '') finiCnt = Number(d.finiCnt)
+        if (d.satisfyScore != null && d.satisfyScore !== '') satisfyScore = Number(d.satisfyScore)
+      }
+    }
+
+    // srchPart=2: 취업현황 (취업률, fallback finiCnt/satisfyScore)
+    if (r2.status === 'fulfilled' && r2.value?.returnJSON) {
+      const parsed = JSON.parse(r2.value.returnJSON)
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        const d = parsed[0]
+        if (d.eiEmplRate3 != null && d.eiEmplRate3 !== '') eiEmplRate3 = String(d.eiEmplRate3)
+        if (d.eiEmplRate6 != null && d.eiEmplRate6 !== '') eiEmplRate6 = String(d.eiEmplRate6)
+        if (finiCnt == null && d.finiCnt != null && d.finiCnt !== '') finiCnt = Number(d.finiCnt)
+        if (satisfyScore == null && d.satisfyScore != null && d.satisfyScore !== '') satisfyScore = Number(d.satisfyScore)
       }
     }
   } catch {}
-  return { eiEmplRate3: null, eiEmplRate6: null, finiCnt: null, satisfyScore: null }
+
+  return { eiEmplRate3, eiEmplRate6, finiCnt, satisfyScore }
 }
 
 export async function GET(request: NextRequest) {
@@ -100,20 +133,21 @@ export async function GET(request: NextRequest) {
     const from = searchParams.get('from') || '2025-01-01'
     const to = searchParams.get('to') || '2025-12-31'
 
-    // 1. HRD-Net에서 우리 기관 과정 전체 조회
+    // 1. HRD-Net 과정 목록 조회 (개강일 기준 필터 포함)
     const allCourses = await fetchOurCourses(from, to)
 
     // 2. 종료된 과정 + 허용 훈련유형 필터
     const endedCourses = allCourses.filter(item => {
       const endDate = item.traEndDate || ''
-      if (!endDate || endDate >= today) return false
+      if (!endDate || endDate >= toHrdDate(today)) return false
       const type = getType(item.trainTarget || '')
       return type !== null && ALLOWED_TYPES.includes(type)
     })
 
-    // 3. 취업률 병렬 조회 (10개씩 배치)
+    // 3. 훈련실적 + 취업률 병렬 조회 (10개씩 배치)
     const results: Array<{
       courseName: string
+      trprDegr: number
       type: string
       typeLabel: string
       startDate: string
@@ -130,31 +164,32 @@ export async function GET(request: NextRequest) {
     for (let i = 0; i < endedCourses.length; i += BATCH) {
       const batch = endedCourses.slice(i, i + BATCH)
       const batchResults = await Promise.allSettled(
-        batch.map(item => fetchEmploymentRate(item.trprId, item.trprDegr || 1))
+        batch.map(item => fetchCourseStats(item.trprId, item.trprDegr || 1))
       )
       batchResults.forEach((res, j) => {
         const item = batch[j]
-        const emp = res.status === 'fulfilled'
+        const stats = res.status === 'fulfilled'
           ? res.value
           : { eiEmplRate3: null, eiEmplRate6: null, finiCnt: null, satisfyScore: null }
         const type = getType(item.trainTarget || '') || 'NATIONAL'
         results.push({
           courseName: item.title || '-',
+          trprDegr: parseInt(item.trprDegr || '1', 10),
           type,
           typeLabel: TYPE_LABEL[type] || type,
           startDate: item.traStartDate || '-',
           endDate: item.traEndDate || '-',
           capacity: parseInt(item.yardMan || '0', 10),
           applicants: parseInt(item.regCourseMan || '0', 10),
-          eiEmplRate3: emp.eiEmplRate3,
-          eiEmplRate6: emp.eiEmplRate6,
-          finiCnt: emp.finiCnt,
-          satisfyScore: emp.satisfyScore,
+          eiEmplRate3: stats.eiEmplRate3,
+          eiEmplRate6: stats.eiEmplRate6,
+          finiCnt: stats.finiCnt,
+          satisfyScore: stats.satisfyScore,
         })
       })
     }
 
-    // 4. 취업률 데이터 있는 과정만
+    // 4. 취업률 데이터 있는 과정 (구분별 집계용)
     const withData = results.filter(r => r.eiEmplRate6 != null || r.eiEmplRate3 != null)
 
     // 5. 구분별 집계
@@ -176,7 +211,7 @@ export async function GET(request: NextRequest) {
     const allRates3m = withData.filter(r => r.eiEmplRate3 != null).map(r => Number(r.eiEmplRate3))
     const allRates6m = withData.filter(r => r.eiEmplRate6 != null).map(r => Number(r.eiEmplRate6))
 
-    // 수료율 집계 (신청인원 > 0 이고 수료인원 있는 과정)
+    // 수료율 집계
     const completionRates = results
       .filter(r => r.applicants > 0 && r.finiCnt != null)
       .map(r => (r.finiCnt! / r.applicants) * 100)
