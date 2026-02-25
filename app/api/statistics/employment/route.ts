@@ -132,17 +132,14 @@ export async function GET(request: NextRequest) {
     if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
     const { searchParams } = new URL(request.url)
-    const today = new Date().toISOString().slice(0, 10)
     const from = searchParams.get('from') || '2025-01-01'
     const to = searchParams.get('to') || '2025-12-31'
 
-    // 1. HRD-Net 과정 목록 조회 (개강일 기준 필터 포함)
+    // 1. HRD-Net 과정 목록 조회 (종강일 기준)
     const allCourses = await fetchOurCourses(from, to)
 
-    // 2. 종료된 과정 + 허용 훈련유형 필터
+    // 2. 허용 훈련유형 필터 (종강일이 조회 기간에 해당하는 과정 전부 포함)
     const endedCourses = allCourses.filter(item => {
-      const endDate = item.traEndDate || ''
-      if (!endDate || endDate >= toHrdDate(today)) return false
       const type = getType(item.trainTarget || '')
       return type !== null && ALLOWED_TYPES.includes(type)
     })
