@@ -126,6 +126,17 @@ export default function EmploymentStats({ from: initFrom, to: initTo }: { from: 
 
   const totalCourses = data ? data.courses.length : 0
 
+  // 상위 5개 과정 랭킹
+  const top5Satisfy = data
+    ? [...data.courses].filter(c => c.satisfyScore != null).sort((a, b) => b.satisfyScore! - a.satisfyScore!).slice(0, 5)
+    : []
+  const top5Rate3m = data
+    ? [...data.courses].filter(c => c.eiEmplRate3 != null).sort((a, b) => Number(b.eiEmplRate3) - Number(a.eiEmplRate3)).slice(0, 5)
+    : []
+  const top5Rate6m = data
+    ? [...data.courses].filter(c => c.eiEmplRate6 != null).sort((a, b) => Number(b.eiEmplRate6) - Number(a.eiEmplRate6)).slice(0, 5)
+    : []
+
   return (
     <div className="space-y-4">
       {/* 조회 필터 */}
@@ -263,6 +274,98 @@ export default function EmploymentStats({ from: initFrom, to: initTo }: { from: 
                 </div>
               </CardContent>
             </Card>
+          )}
+
+          {/* 상위 5개 과정 랭킹 */}
+          {(top5Satisfy.length > 0 || top5Rate3m.length > 0 || top5Rate6m.length > 0) && (
+            <div className="grid gap-4 md:grid-cols-3">
+              {/* 만족도 상위 5 */}
+              <Card>
+                <CardHeader className="pb-3">
+                  <CardTitle className="text-base">만족도 상위 5</CardTitle>
+                  <CardDescription>100점 만점 기준</CardDescription>
+                </CardHeader>
+                <CardContent className="pt-0">
+                  {top5Satisfy.length === 0 ? (
+                    <p className="text-sm text-muted-foreground">데이터 없음</p>
+                  ) : (
+                    <div>
+                      {top5Satisfy.map((c, i) => (
+                        <div key={i} className="flex items-center gap-2 py-2 border-b last:border-0">
+                          <span className="text-sm font-bold text-muted-foreground w-4 shrink-0">{i + 1}</span>
+                          <div className="flex-1 min-w-0">
+                            <p className="text-xs font-medium leading-snug truncate">{c.courseName}</p>
+                            <div className="flex items-center gap-1 mt-0.5">
+                              <span className={`inline-block px-1.5 rounded text-xs font-semibold ${TYPE_BADGE[c.type] || 'bg-gray-100 text-gray-700'}`}>{TYPE_SHORT[c.type] || c.type}</span>
+                              <span className="text-xs text-muted-foreground">{c.trprDegr}회</span>
+                            </div>
+                          </div>
+                          <span className={`text-sm font-bold shrink-0 ${satisfyColor(c.satisfyScore)}`}>{c.satisfyScore!.toFixed(1)}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+
+              {/* 취업률 3개월 상위 5 */}
+              <Card>
+                <CardHeader className="pb-3">
+                  <CardTitle className="text-base">취업률 3개월 상위 5</CardTitle>
+                  <CardDescription>고용보험 기준 3개월 취업률</CardDescription>
+                </CardHeader>
+                <CardContent className="pt-0">
+                  {top5Rate3m.length === 0 ? (
+                    <p className="text-sm text-muted-foreground">데이터 없음</p>
+                  ) : (
+                    <div>
+                      {top5Rate3m.map((c, i) => (
+                        <div key={i} className="flex items-center gap-2 py-2 border-b last:border-0">
+                          <span className="text-sm font-bold text-muted-foreground w-4 shrink-0">{i + 1}</span>
+                          <div className="flex-1 min-w-0">
+                            <p className="text-xs font-medium leading-snug truncate">{c.courseName}</p>
+                            <div className="flex items-center gap-1 mt-0.5">
+                              <span className={`inline-block px-1.5 rounded text-xs font-semibold ${TYPE_BADGE[c.type] || 'bg-gray-100 text-gray-700'}`}>{TYPE_SHORT[c.type] || c.type}</span>
+                              <span className="text-xs text-muted-foreground">{c.trprDegr}회</span>
+                            </div>
+                          </div>
+                          <span className={`text-sm font-bold shrink-0 ${rateColor(Number(c.eiEmplRate3))}`}>{c.eiEmplRate3}%</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+
+              {/* 취업률 6개월 상위 5 */}
+              <Card>
+                <CardHeader className="pb-3">
+                  <CardTitle className="text-base">취업률 6개월 상위 5</CardTitle>
+                  <CardDescription>고용보험 기준 6개월 취업률</CardDescription>
+                </CardHeader>
+                <CardContent className="pt-0">
+                  {top5Rate6m.length === 0 ? (
+                    <p className="text-sm text-muted-foreground">데이터 없음</p>
+                  ) : (
+                    <div>
+                      {top5Rate6m.map((c, i) => (
+                        <div key={i} className="flex items-center gap-2 py-2 border-b last:border-0">
+                          <span className="text-sm font-bold text-muted-foreground w-4 shrink-0">{i + 1}</span>
+                          <div className="flex-1 min-w-0">
+                            <p className="text-xs font-medium leading-snug truncate">{c.courseName}</p>
+                            <div className="flex items-center gap-1 mt-0.5">
+                              <span className={`inline-block px-1.5 rounded text-xs font-semibold ${TYPE_BADGE[c.type] || 'bg-gray-100 text-gray-700'}`}>{TYPE_SHORT[c.type] || c.type}</span>
+                              <span className="text-xs text-muted-foreground">{c.trprDegr}회</span>
+                            </div>
+                          </div>
+                          <span className={`text-sm font-bold shrink-0 ${rateColor(Number(c.eiEmplRate6))}`}>{c.eiEmplRate6}%</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            </div>
           )}
 
           {/* 과정별 취업률 */}

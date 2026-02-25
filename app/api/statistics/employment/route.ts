@@ -196,27 +196,29 @@ export async function GET(request: NextRequest) {
       })
     }
 
-    // 4. 취업률 데이터 있는 과정 (구분별 집계용)
+    // 4. 취업률 데이터 있는 과정 (집계용)
     const withData = results.filter(r => r.eiEmplRate6 != null || r.eiEmplRate3 != null)
+    // 6개월 데이터 있는 과정만 (평균 계산 기준)
+    const withRate6 = results.filter(r => r.eiEmplRate6 != null)
 
-    // 5. 구분별 집계
+    // 5. 구분별 집계 (6개월 데이터 있는 과정 기준)
     const byType: Record<string, { rates3m: number[], rates6m: number[] }> = {}
-    for (const r of withData) {
+    for (const r of withRate6) {
       if (!byType[r.type]) byType[r.type] = { rates3m: [], rates6m: [] }
       if (r.eiEmplRate3 != null) byType[r.type].rates3m.push(Number(r.eiEmplRate3))
-      if (r.eiEmplRate6 != null) byType[r.type].rates6m.push(Number(r.eiEmplRate6))
+      byType[r.type].rates6m.push(Number(r.eiEmplRate6))
     }
 
     const typeStats = Object.entries(byType).map(([type, s]) => ({
       type,
       typeLabel: TYPE_LABEL[type] || type,
-      count: Math.max(s.rates3m.length, s.rates6m.length),
+      count: s.rates6m.length,
       avgRate3m: s.rates3m.length > 0 ? s.rates3m.reduce((a, b) => a + b, 0) / s.rates3m.length : null,
       avgRate6m: s.rates6m.length > 0 ? s.rates6m.reduce((a, b) => a + b, 0) / s.rates6m.length : null,
     }))
 
-    const allRates3m = withData.filter(r => r.eiEmplRate3 != null).map(r => Number(r.eiEmplRate3))
-    const allRates6m = withData.filter(r => r.eiEmplRate6 != null).map(r => Number(r.eiEmplRate6))
+    const allRates3m = withRate6.filter(r => r.eiEmplRate3 != null).map(r => Number(r.eiEmplRate3))
+    const allRates6m = withRate6.map(r => Number(r.eiEmplRate6!))
 
     // 수료율 집계
     const completionRates = results
