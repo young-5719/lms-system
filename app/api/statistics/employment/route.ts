@@ -46,10 +46,10 @@ async function fetchOurCourses(from: string, to: string): Promise<any[]> {
 
   while (page <= 30) {
     try {
+      // srchTorgId로 기관 필터링하므로 area 필터 불필요, subTitle 체크 제거
       const url =
         `https://hrd.work24.go.kr/hrdp/api/apipo/APIPO0101T.do` +
         `?outType=1&sort=ASC` +
-        `&srchTraArea1=${AREA1}&srchTraArea2=${AREA2}` +
         `&srchTraStDt=${broadFromHrd}&srchTraEndDt=${toHrd}` +
         `&sortCol=2&authKey=${AUTH_KEY}&returnType=JSON&pageSize=100&pageNum=${page}` +
         `&srchTorgId=${INST_CODE}`
@@ -60,14 +60,10 @@ async function fetchOurCourses(from: string, to: string): Promise<any[]> {
       const items: any[] = Array.isArray(parsed.srchList) ? parsed.srchList : []
       if (items.length === 0) break
 
-      // 기관명 필터 + 종강일이 조회 기간 내에 포함된 과정만
+      // 종강일이 조회 기간 내에 포함된 과정만 (기관 필터는 API에서 srchTorgId로 처리)
       const ours = items.filter((item: any) => {
         const endDate = item.traEndDate || ''
-        return (
-          String(item.subTitle || '').includes(INST_NAME) &&
-          endDate >= fromHrd &&
-          endDate <= toHrd
-        )
+        return endDate >= fromHrd && endDate <= toHrd
       })
       allItems.push(...ours)
       if (items.length < 100) break
