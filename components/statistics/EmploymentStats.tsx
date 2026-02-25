@@ -26,6 +26,7 @@ interface CourseEmpl {
   eiEmplRate3: string | null
   eiEmplRate6: string | null
   finiCnt: number | null
+  satisfyScore: number | null
 }
 
 interface EmploymentData {
@@ -33,6 +34,8 @@ interface EmploymentData {
   totalWithData: number
   avgRate3m: number | null
   avgRate6m: number | null
+  avgCompletionRate: number | null
+  avgSatisfyScore: number | null
   typeStats: TypeStat[]
   courses: CourseEmpl[]
 }
@@ -83,7 +86,12 @@ export default function EmploymentStats({ from: initFrom, to: initTo }: { from: 
     : []
 
   const sortedCourses = data
-    ? [...data.courses].sort((a, b) => Number(b.eiEmplRate6 ?? 0) - Number(a.eiEmplRate6 ?? 0))
+    ? [...data.courses].sort((a, b) => {
+        // 취업률 있는 과정 먼저, 그 다음 6개월 취업률 내림차순
+        const a6 = a.eiEmplRate6 != null ? Number(a.eiEmplRate6) : -1
+        const b6 = b.eiEmplRate6 != null ? Number(b.eiEmplRate6) : -1
+        return b6 - a6
+      })
     : []
 
   return (
@@ -128,7 +136,7 @@ export default function EmploymentStats({ from: initFrom, to: initTo }: { from: 
       {data && (
         <>
           {/* 요약 카드 */}
-          <div className="grid gap-4 md:grid-cols-4">
+          <div className="grid gap-4 grid-cols-2 sm:grid-cols-3 md:grid-cols-6">
             <Card>
               <CardHeader className="pb-2">
                 <CardTitle className="text-sm font-medium">조회 대상 과정</CardTitle>
@@ -167,6 +175,28 @@ export default function EmploymentStats({ from: initFrom, to: initTo }: { from: 
                   {fmt(data.avgRate6m)}
                 </div>
                 <p className="text-xs text-muted-foreground">고용보험 기준</p>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm font-medium">평균 수료율</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className={`text-2xl font-bold ${rateColor(data.avgCompletionRate)}`}>
+                  {fmt(data.avgCompletionRate)}
+                </div>
+                <p className="text-xs text-muted-foreground">수료인원 ÷ 신청인원</p>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm font-medium">평균 만족도</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className={`text-2xl font-bold ${data.avgSatisfyScore == null ? 'text-muted-foreground' : data.avgSatisfyScore >= 90 ? 'font-semibold text-green-600' : data.avgSatisfyScore >= 70 ? 'font-semibold text-yellow-600' : 'font-semibold text-red-600'}`}>
+                  {data.avgSatisfyScore != null ? data.avgSatisfyScore.toFixed(1) + '점' : '-'}
+                </div>
+                <p className="text-xs text-muted-foreground">100점 만점</p>
               </CardContent>
             </Card>
           </div>
@@ -212,9 +242,10 @@ export default function EmploymentStats({ from: initFrom, to: initTo }: { from: 
             <Card>
               <CardHeader>
                 <CardTitle>과정별 취업률</CardTitle>
-                <CardDescription>6개월 취업률 기준 내림차순 · 취업률 데이터가 있는 과정만 표시</CardDescription>
+                <CardDescription>6개월 취업률 기준 내림차순 · 전체 조회 과정 표시</CardDescription>
               </CardHeader>
               <CardContent>
+                <div className="overflow-x-auto">
                 <Table>
                   <TableHeader>
                     <TableRow>
@@ -223,36 +254,56 @@ export default function EmploymentStats({ from: initFrom, to: initTo }: { from: 
                       <TableHead className="whitespace-nowrap">개강일</TableHead>
                       <TableHead className="whitespace-nowrap">종강일</TableHead>
                       <TableHead className="text-right">정원</TableHead>
-                      <TableHead className="text-right">신청자</TableHead>
+                      <TableHead className="text-right">신청인원</TableHead>
                       <TableHead className="text-right">수료인원</TableHead>
+                      <TableHead className="text-right">수료율</TableHead>
+                      <TableHead className="text-right">만족도</TableHead>
                       <TableHead className="text-right">취업률 (3개월)</TableHead>
                       <TableHead className="text-right">취업률 (6개월)</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {sortedCourses.map((c, i) => (
-                      <TableRow key={i}>
-                        <TableCell className="font-medium text-sm">{c.courseName}</TableCell>
-                        <TableCell className="text-sm">{c.typeLabel || TYPE_LABEL[c.type] || c.type}</TableCell>
-                        <TableCell className="whitespace-nowrap text-sm">{c.startDate}</TableCell>
-                        <TableCell className="whitespace-nowrap text-sm">{c.endDate}</TableCell>
-                        <TableCell className="text-right">{c.capacity > 0 ? c.capacity + '명' : '-'}</TableCell>
-                        <TableCell className="text-right">{c.applicants > 0 ? c.applicants + '명' : '-'}</TableCell>
-                        <TableCell className="text-right">{c.finiCnt != null ? c.finiCnt + '명' : '-'}</TableCell>
-                        <TableCell className="text-right">
-                          <span className={rateColor(c.eiEmplRate3 != null ? Number(c.eiEmplRate3) : null)}>
-                            {c.eiEmplRate3 != null ? c.eiEmplRate3 + '%' : '-'}
-                          </span>
-                        </TableCell>
-                        <TableCell className="text-right">
-                          <span className={rateColor(c.eiEmplRate6 != null ? Number(c.eiEmplRate6) : null)}>
-                            {c.eiEmplRate6 != null ? c.eiEmplRate6 + '%' : '-'}
-                          </span>
-                        </TableCell>
-                      </TableRow>
-                    ))}
+                    {sortedCourses.map((c, i) => {
+                      const completionRate = c.finiCnt != null && c.applicants > 0
+                        ? (c.finiCnt / c.applicants) * 100
+                        : null
+                      return (
+                        <TableRow key={i}>
+                          <TableCell className="font-medium text-sm">{c.courseName}</TableCell>
+                          <TableCell className="text-sm">{c.typeLabel || TYPE_LABEL[c.type] || c.type}</TableCell>
+                          <TableCell className="whitespace-nowrap text-sm">{c.startDate}</TableCell>
+                          <TableCell className="whitespace-nowrap text-sm">{c.endDate}</TableCell>
+                          <TableCell className="text-right">{c.capacity > 0 ? c.capacity + '명' : '-'}</TableCell>
+                          <TableCell className="text-right">{c.applicants > 0 ? c.applicants + '명' : '-'}</TableCell>
+                          <TableCell className="text-right">{c.finiCnt != null ? c.finiCnt + '명' : '-'}</TableCell>
+                          <TableCell className="text-right">
+                            <span className={rateColor(completionRate)}>
+                              {completionRate != null ? completionRate.toFixed(1) + '%' : '-'}
+                            </span>
+                          </TableCell>
+                          <TableCell className="text-right">
+                            {c.satisfyScore != null ? (
+                              <span className={c.satisfyScore >= 90 ? 'font-semibold text-green-600' : c.satisfyScore >= 70 ? 'font-semibold text-yellow-600' : 'font-semibold text-red-600'}>
+                                {c.satisfyScore.toFixed(1)}점
+                              </span>
+                            ) : '-'}
+                          </TableCell>
+                          <TableCell className="text-right">
+                            <span className={rateColor(c.eiEmplRate3 != null ? Number(c.eiEmplRate3) : null)}>
+                              {c.eiEmplRate3 != null ? c.eiEmplRate3 + '%' : '-'}
+                            </span>
+                          </TableCell>
+                          <TableCell className="text-right">
+                            <span className={rateColor(c.eiEmplRate6 != null ? Number(c.eiEmplRate6) : null)}>
+                              {c.eiEmplRate6 != null ? c.eiEmplRate6 + '%' : '-'}
+                            </span>
+                          </TableCell>
+                        </TableRow>
+                      )
+                    })}
                   </TableBody>
                 </Table>
+                </div>
               </CardContent>
             </Card>
           ) : (

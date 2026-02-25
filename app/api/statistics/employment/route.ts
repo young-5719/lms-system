@@ -64,6 +64,7 @@ async function fetchEmploymentRate(trprId: string, trprDegr: string | number): P
   eiEmplRate3: string | null
   eiEmplRate6: string | null
   finiCnt: number | null
+  satisfyScore: number | null
 }> {
   try {
     const url =
@@ -80,11 +81,12 @@ async function fetchEmploymentRate(trprId: string, trprDegr: string | number): P
           eiEmplRate3: d.eiEmplRate3 != null && d.eiEmplRate3 !== '' ? String(d.eiEmplRate3) : null,
           eiEmplRate6: d.eiEmplRate6 != null && d.eiEmplRate6 !== '' ? String(d.eiEmplRate6) : null,
           finiCnt: d.finiCnt != null ? Number(d.finiCnt) : null,
+          satisfyScore: d.satisfyScore != null && d.satisfyScore !== '' ? Number(d.satisfyScore) : null,
         }
       }
     }
   } catch {}
-  return { eiEmplRate3: null, eiEmplRate6: null, finiCnt: null }
+  return { eiEmplRate3: null, eiEmplRate6: null, finiCnt: null, satisfyScore: null }
 }
 
 export async function GET(request: NextRequest) {
@@ -121,6 +123,7 @@ export async function GET(request: NextRequest) {
       eiEmplRate3: string | null
       eiEmplRate6: string | null
       finiCnt: number | null
+      satisfyScore: number | null
     }> = []
 
     const BATCH = 10
@@ -133,7 +136,7 @@ export async function GET(request: NextRequest) {
         const item = batch[j]
         const emp = res.status === 'fulfilled'
           ? res.value
-          : { eiEmplRate3: null, eiEmplRate6: null, finiCnt: null }
+          : { eiEmplRate3: null, eiEmplRate6: null, finiCnt: null, satisfyScore: null }
         const type = getType(item.trainTarget || '') || 'NATIONAL'
         results.push({
           courseName: item.title || '-',
@@ -146,6 +149,7 @@ export async function GET(request: NextRequest) {
           eiEmplRate3: emp.eiEmplRate3,
           eiEmplRate6: emp.eiEmplRate6,
           finiCnt: emp.finiCnt,
+          satisfyScore: emp.satisfyScore,
         })
       })
     }
@@ -172,13 +176,29 @@ export async function GET(request: NextRequest) {
     const allRates3m = withData.filter(r => r.eiEmplRate3 != null).map(r => Number(r.eiEmplRate3))
     const allRates6m = withData.filter(r => r.eiEmplRate6 != null).map(r => Number(r.eiEmplRate6))
 
+    // 수료율 집계 (신청인원 > 0 이고 수료인원 있는 과정)
+    const completionRates = results
+      .filter(r => r.applicants > 0 && r.finiCnt != null)
+      .map(r => (r.finiCnt! / r.applicants) * 100)
+    const avgCompletionRate = completionRates.length > 0
+      ? completionRates.reduce((a, b) => a + b, 0) / completionRates.length
+      : null
+
+    // 만족도 집계
+    const satisfyScores = results.filter(r => r.satisfyScore != null).map(r => r.satisfyScore!)
+    const avgSatisfyScore = satisfyScores.length > 0
+      ? satisfyScores.reduce((a, b) => a + b, 0) / satisfyScores.length
+      : null
+
     return NextResponse.json({
       totalQueried: endedCourses.length,
       totalWithData: withData.length,
       avgRate3m: allRates3m.length > 0 ? allRates3m.reduce((a, b) => a + b, 0) / allRates3m.length : null,
       avgRate6m: allRates6m.length > 0 ? allRates6m.reduce((a, b) => a + b, 0) / allRates6m.length : null,
+      avgCompletionRate,
+      avgSatisfyScore,
       typeStats,
-      courses: withData,
+      courses: results,
     })
   } catch (error) {
     console.error('Employment stats error:', error)
