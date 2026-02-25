@@ -113,15 +113,13 @@ export default function EmploymentStats({ from: initFrom, to: initTo }: { from: 
     ? [...data.typeStats].sort((a, b) => TYPE_ORDER.indexOf(a.type) - TYPE_ORDER.indexOf(b.type))
     : []
 
-  // 취업률 반영된 과정만 표시 (eiEmplRate3 또는 eiEmplRate6 있는 과정)
+  // 전체 과정 표시 (취업률 없는 과정 포함), 6개월 취업률 기준 내림차순 정렬
   const sortedCourses = data
-    ? [...data.courses]
-        .filter(c => c.eiEmplRate3 != null || c.eiEmplRate6 != null)
-        .sort((a, b) => {
-          const a6 = a.eiEmplRate6 != null ? Number(a.eiEmplRate6) : -1
-          const b6 = b.eiEmplRate6 != null ? Number(b.eiEmplRate6) : -1
-          return b6 - a6
-        })
+    ? [...data.courses].sort((a, b) => {
+        const a6 = a.eiEmplRate6 != null ? Number(a.eiEmplRate6) : -1
+        const b6 = b.eiEmplRate6 != null ? Number(b.eiEmplRate6) : -1
+        return b6 - a6
+      })
     : []
 
   const totalCourses = data ? data.courses.length : 0
@@ -374,8 +372,8 @@ export default function EmploymentStats({ from: initFrom, to: initTo }: { from: 
               <CardHeader className="pb-3">
                 <CardTitle className="text-base">과정별 상세</CardTitle>
                 <CardDescription>
-                  취업률 집계 완료 과정만 표시 · 6개월 취업률 기준 내림차순
-                  &nbsp;·&nbsp; {sortedCourses.length}개 / 전체 {totalCourses}개
+                  조회 기간 내 전체 과정 · 6개월 취업률 기준 내림차순 · 평균은 취업률 데이터 있는 과정만 반영
+                  &nbsp;·&nbsp; 총 {totalCourses}개
                 </CardDescription>
               </CardHeader>
               <CardContent className="p-0">
@@ -483,10 +481,7 @@ export default function EmploymentStats({ from: initFrom, to: initTo }: { from: 
           ) : (
             <Card>
               <CardContent className="py-8 text-center text-muted-foreground text-sm">
-                취업률이 집계된 과정이 없습니다
-                {totalCourses > 0 && (
-                  <p className="mt-1 text-xs">전체 {totalCourses}개 과정 조회됨 · 아직 취업률 반영 전</p>
-                )}
+                조회된 과정이 없습니다
               </CardContent>
             </Card>
           )}
