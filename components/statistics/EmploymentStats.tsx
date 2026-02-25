@@ -113,13 +113,18 @@ export default function EmploymentStats({ from: initFrom, to: initTo }: { from: 
     ? [...data.typeStats].sort((a, b) => TYPE_ORDER.indexOf(a.type) - TYPE_ORDER.indexOf(b.type))
     : []
 
+  // 취업률 반영된 과정만 표시 (eiEmplRate3 또는 eiEmplRate6 있는 과정)
   const sortedCourses = data
-    ? [...data.courses].sort((a, b) => {
-        const a6 = a.eiEmplRate6 != null ? Number(a.eiEmplRate6) : -1
-        const b6 = b.eiEmplRate6 != null ? Number(b.eiEmplRate6) : -1
-        return b6 - a6
-      })
+    ? [...data.courses]
+        .filter(c => c.eiEmplRate3 != null || c.eiEmplRate6 != null)
+        .sort((a, b) => {
+          const a6 = a.eiEmplRate6 != null ? Number(a.eiEmplRate6) : -1
+          const b6 = b.eiEmplRate6 != null ? Number(b.eiEmplRate6) : -1
+          return b6 - a6
+        })
     : []
+
+  const totalCourses = data ? data.courses.length : 0
 
   return (
     <div className="space-y-4">
@@ -133,7 +138,7 @@ export default function EmploymentStats({ from: initFrom, to: initTo }: { from: 
         </div>
         <div className="flex flex-wrap items-end gap-2">
           <div>
-            <label className="text-xs font-medium mb-1 block text-muted-foreground">개강일 시작</label>
+            <label className="text-xs font-medium mb-1 block text-muted-foreground">종강일 시작</label>
             <input
               type="date"
               value={from}
@@ -142,7 +147,7 @@ export default function EmploymentStats({ from: initFrom, to: initTo }: { from: 
             />
           </div>
           <div>
-            <label className="text-xs font-medium mb-1 block text-muted-foreground">개강일 종료</label>
+            <label className="text-xs font-medium mb-1 block text-muted-foreground">종강일 종료</label>
             <input
               type="date"
               value={to}
@@ -266,7 +271,8 @@ export default function EmploymentStats({ from: initFrom, to: initTo }: { from: 
               <CardHeader className="pb-3">
                 <CardTitle className="text-base">과정별 상세</CardTitle>
                 <CardDescription>
-                  6개월 취업률 기준 내림차순 · 전체 {sortedCourses.length}개 과정
+                  취업률 집계 완료 과정만 표시 · 6개월 취업률 기준 내림차순
+                  &nbsp;·&nbsp; {sortedCourses.length}개 / 전체 {totalCourses}개
                 </CardDescription>
               </CardHeader>
               <CardContent className="p-0">
@@ -374,7 +380,10 @@ export default function EmploymentStats({ from: initFrom, to: initTo }: { from: 
           ) : (
             <Card>
               <CardContent className="py-8 text-center text-muted-foreground text-sm">
-                조회된 과정이 없습니다
+                취업률이 집계된 과정이 없습니다
+                {totalCourses > 0 && (
+                  <p className="mt-1 text-xs">전체 {totalCourses}개 과정 조회됨 · 아직 취업률 반영 전</p>
+                )}
               </CardContent>
             </Card>
           )}

@@ -28,12 +28,19 @@ const TYPE_LABEL: Record<string, string> = {
   KDT: 'K-디지털 트레이닝',
 }
 
-// HRD-Net 과정 목록 조회 (개강일 기준 필터)
+// HRD-Net 과정 목록 조회 (종강일 기준 필터)
+// 종강일이 [from, to] 범위에 포함된 과정만 반환
+// HRD-Net 검색 범위는 2년 전 개강까지 포함해 긴 과정도 누락 없이 수집
 async function fetchOurCourses(from: string, to: string): Promise<any[]> {
   const allItems: any[] = []
   let page = 1
   const fromHrd = toHrdDate(from)
   const toHrd = toHrdDate(to)
+
+  // 최장 2년짜리 과정도 포함되도록 srchTraStDt를 2년 전으로 설정
+  const broadFrom = new Date(from)
+  broadFrom.setFullYear(broadFrom.getFullYear() - 2)
+  const broadFromHrd = toHrdDate(broadFrom.toISOString().slice(0, 10))
 
   while (page <= 30) {
     try {
@@ -41,7 +48,7 @@ async function fetchOurCourses(from: string, to: string): Promise<any[]> {
         `https://hrd.work24.go.kr/hrdp/api/apipo/APIPO0101T.do` +
         `?outType=1&sort=ASC` +
         `&srchTraArea1=${AREA1}&srchTraArea2=${AREA2}` +
-        `&srchTraStDt=${fromHrd}&srchTraEndDt=${toHrd}` +
+        `&srchTraStDt=${broadFromHrd}&srchTraEndDt=${toHrd}` +
         `&sortCol=2&authKey=${AUTH_KEY}&returnType=JSON&pageSize=100&pageNum=${page}` +
         `&srchTorgId=${INST_CODE}`
       const res = await fetch(url)
@@ -51,13 +58,13 @@ async function fetchOurCourses(from: string, to: string): Promise<any[]> {
       const items: any[] = Array.isArray(parsed.srchList) ? parsed.srchList : []
       if (items.length === 0) break
 
-      // 기관명 필터 + 개강일이 조회 기간 내에 포함된 과정만
+      // 기관명 필터 + 종강일이 조회 기간 내에 포함된 과정만
       const ours = items.filter((item: any) => {
-        const startDate = item.traStartDate || ''
+        const endDate = item.traEndDate || ''
         return (
           String(item.subTitle || '').includes(INST_NAME) &&
-          startDate >= fromHrd &&
-          startDate <= toHrd
+          endDate >= fromHrd &&
+          endDate <= toHrd
         )
       })
       allItems.push(...ours)
