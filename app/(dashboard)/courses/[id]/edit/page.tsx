@@ -28,7 +28,7 @@ export default async function EditCoursePage({
   return (
     <div className="space-y-6">
       <div>
-        <h2 className="text-3xl font-bold tracking-tight">과정 수정</h2>
+        <h2 className="text-2xl md:text-3xl font-bold tracking-tight">과정 수정</h2>
         <p className="text-muted-foreground">{course.courseName}</p>
       </div>
 

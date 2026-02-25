@@ -170,7 +170,7 @@ export default async function StatisticsPage({
   return (
     <div className="space-y-6">
       <div>
-        <h2 className="text-3xl font-bold tracking-tight">통계</h2>
+        <h2 className="text-2xl md:text-3xl font-bold tracking-tight">통계</h2>
         <p className="text-muted-foreground">
           개강일(col13) 기준 조회 · 모집률 = 수강생÷정원 · 수료율 = 수료인원÷수강생
         </p>
@@ -187,7 +187,7 @@ export default async function StatisticsPage({
       </div>
 
       {/* 전체 통계 카드 */}
-      <div className="grid gap-4 md:grid-cols-5">
+      <div className="grid gap-4 grid-cols-2 sm:grid-cols-3 md:grid-cols-5">
         <Card>
           <CardHeader className="pb-2">
             <CardTitle className="text-sm font-medium">전체 과정</CardTitle>
@@ -249,6 +249,7 @@ export default async function StatisticsPage({
           </CardDescription>
         </CardHeader>
         <CardContent>
+          <div className="overflow-x-auto">
           <Table>
             <TableHeader>
               <TableRow>
@@ -295,6 +296,7 @@ export default async function StatisticsPage({
               )}
             </TableBody>
           </Table>
+          </div>
         </CardContent>
       </Card>
 
@@ -305,6 +307,7 @@ export default async function StatisticsPage({
           <CardDescription>소분류 기준 총수강생 ÷ 총정원 순위</CardDescription>
         </CardHeader>
         <CardContent>
+          <div className="overflow-x-auto">
           <Table>
             <TableHeader>
               <TableRow>
@@ -339,6 +342,7 @@ export default async function StatisticsPage({
               )}
             </TableBody>
           </Table>
+          </div>
         </CardContent>
       </Card>
 
@@ -349,6 +353,7 @@ export default async function StatisticsPage({
           <CardDescription>수강생 ÷ 정원 기준 상위 10개</CardDescription>
         </CardHeader>
         <CardContent>
+          <div className="overflow-x-auto">
           <Table>
             <TableHeader>
               <TableRow>
@@ -383,6 +388,7 @@ export default async function StatisticsPage({
               )}
             </TableBody>
           </Table>
+          </div>
         </CardContent>
       </Card>
     </div>

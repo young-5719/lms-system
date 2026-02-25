@@ -129,7 +129,7 @@ export default function RevenuePage() {
     <div className="space-y-6">
       {/* 헤더 */}
       <div>
-        <h2 className="text-3xl font-bold tracking-tight">국비지원 예상매출</h2>
+        <h2 className="text-2xl md:text-3xl font-bold tracking-tight">국비지원 예상매출</h2>
         <p className="text-muted-foreground">
           현재 운영 중인 과정의 단위기간별 훈련비 지급 예정액
         </p>

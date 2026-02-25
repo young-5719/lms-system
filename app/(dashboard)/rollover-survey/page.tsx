@@ -106,7 +106,7 @@ export default function RolloverSurveyPage() {
     <div className="space-y-6">
       {/* 상단 헤더 - 인쇄 시 숨김 */}
       <div className="no-print">
-        <h2 className="text-3xl font-bold tracking-tight">이월희망조사표</h2>
+        <h2 className="text-2xl md:text-3xl font-bold tracking-tight">이월희망조사표</h2>
         <p className="text-muted-foreground">종강 예정 과정의 수강생 대상 다음 과정 수요 파악</p>
       </div>
 

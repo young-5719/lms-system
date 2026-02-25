@@ -181,7 +181,7 @@ export default async function DashboardPage() {
     <div className="space-y-8">
       {/* 헤더 */}
       <div>
-        <h2 className="text-3xl font-bold tracking-tight">대시보드</h2>
+        <h2 className="text-2xl md:text-3xl font-bold tracking-tight">대시보드</h2>
         <p className="text-muted-foreground">
           {format(now, 'yyyy년 M월 d일')} {isWeekend ? '(주말)' : '(평일)'} 기준
         </p>
@@ -284,7 +284,7 @@ export default async function DashboardPage() {
       )}
 
       {/* 요약 통계 */}
-      <div className="grid gap-4 md:grid-cols-5">
+      <div className="grid gap-4 grid-cols-2 sm:grid-cols-3 md:grid-cols-5">
         <Card>
           <CardHeader className="pb-2">
             <CardTitle className="text-sm font-medium text-muted-foreground">전체 과정</CardTitle>

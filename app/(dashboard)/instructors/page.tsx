@@ -233,14 +233,16 @@ export default async function InstructorsPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-start justify-between">
+      <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
         <div>
-          <h2 className="text-3xl font-bold tracking-tight">강사별 수업시간</h2>
+          <h2 className="text-2xl md:text-3xl font-bold tracking-tight">강사별 수업시간</h2>
           <p className="text-muted-foreground">
             2026년 재직자·일반·실업자 과정 대상, 일정변경·취업특강 반영
           </p>
         </div>
-        <ExportButton />
+        <div className="self-start sm:self-auto shrink-0">
+          <ExportButton />
+        </div>
       </div>
 
       {/* 요약 카드 */}

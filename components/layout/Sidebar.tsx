@@ -47,7 +47,7 @@ export default function Sidebar() {
 
   return (
     <aside
-      className="no-print w-64 flex-shrink-0 flex flex-col min-h-screen"
+      className="no-print hidden md:flex w-64 flex-shrink-0 flex-col min-h-screen"
       style={{ background: 'linear-gradient(180deg, #1e3a5f 0%, #152d4a 100%)' }}
     >
       {/* 로고 */}

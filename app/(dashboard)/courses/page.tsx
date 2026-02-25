@@ -41,12 +41,12 @@ export default async function CoursesPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex justify-between items-center">
+      <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-3">
         <div>
-          <h2 className="text-3xl font-bold tracking-tight">과정 관리</h2>
+          <h2 className="text-2xl md:text-3xl font-bold tracking-tight">과정 관리</h2>
           <p className="text-muted-foreground">모든 과정을 조회하고 관리하세요</p>
         </div>
-        <Link href="/courses/new">
+        <Link href="/courses/new" className="self-start sm:self-auto">
           <Button>새 과정 추가</Button>
         </Link>
       </div>

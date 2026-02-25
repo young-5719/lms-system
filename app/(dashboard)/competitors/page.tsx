@@ -163,7 +163,7 @@ export default function CompetitorsPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h2 className="text-3xl font-bold tracking-tight">경쟁기관 현황</h2>
+        <h2 className="text-2xl md:text-3xl font-bold tracking-tight">경쟁기관 현황</h2>
         <p className="text-muted-foreground">
           고용24 HRD-Net API 기반 경쟁 학원 과정 현황
         </p>

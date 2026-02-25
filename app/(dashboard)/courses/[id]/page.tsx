@@ -38,7 +38,7 @@ export default async function CourseDetailPage({
     <div className="space-y-6">
       <div className="flex justify-between items-center">
         <div>
-          <h2 className="text-3xl font-bold tracking-tight">{course.courseName}</h2>
+          <h2 className="text-2xl md:text-3xl font-bold tracking-tight">{course.courseName}</h2>
           <p className="text-muted-foreground">훈련ID: {course.trainingId}</p>
         </div>
         <div className="space-x-2">

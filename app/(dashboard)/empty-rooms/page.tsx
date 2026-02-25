@@ -131,7 +131,7 @@ export default function EmptyRoomsPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h2 className="text-3xl font-bold tracking-tight">강의실 현황</h2>
+        <h2 className="text-2xl md:text-3xl font-bold tracking-tight">강의실 현황</h2>
         <p className="text-muted-foreground">날짜별 강의실 사용 현황을 한눈에 확인하세요</p>
       </div>
 

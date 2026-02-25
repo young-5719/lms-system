@@ -222,7 +222,7 @@ export default async function SchedulePage() {
   return (
     <div className="space-y-6">
       <div>
-        <h2 className="text-3xl font-bold tracking-tight">강의장 현황</h2>
+        <h2 className="text-2xl md:text-3xl font-bold tracking-tight">강의장 현황</h2>
         <p className="text-muted-foreground">강의장별 스케줄을 한눈에 확인하세요</p>
       </div>
 

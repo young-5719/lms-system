@@ -196,7 +196,7 @@ export default function WaitlistPage() {
       {/* 헤더 */}
       <div className="flex items-start justify-between">
         <div>
-          <h2 className="text-3xl font-bold tracking-tight">차기 개강 대기자</h2>
+          <h2 className="text-2xl md:text-3xl font-bold tracking-tight">차기 개강 대기자</h2>
           <p className="text-muted-foreground">다음 일정을 희망하는 수강 대기자 명부</p>
         </div>
         <Button onClick={openAddForm} className="shrink-0">+ 대기자 등록</Button>
