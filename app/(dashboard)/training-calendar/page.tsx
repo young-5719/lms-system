@@ -542,6 +542,28 @@ function buildMonthGrid(year: number, month: number): (Date | null)[][] {
   return rows
 }
 
+// ─── Opening / closing summary helpers ───────────────────────────────────────
+
+function addDaysStr(dateStr: string, n: number): string {
+  const d = new Date(dateStr + 'T00:00:00')
+  d.setDate(d.getDate() + n)
+  return getLocalDateString(d)
+}
+
+function dDayStr(dateStr: string, today: string): string {
+  const diff = Math.round(
+    (new Date(dateStr + 'T00:00:00').getTime() - new Date(today + 'T00:00:00').getTime()) / 86400000
+  )
+  if (diff === 0) return '오늘'
+  if (diff > 0) return `D-${diff}`
+  return `D+${Math.abs(diff)}`
+}
+
+// 실업자 계열 카테고리 판별 (폴더명 기준)
+function isUnemployedCat(catName: string): boolean {
+  return catName.includes('실업자') || catName.includes('국기') || catName.includes('내일배움')
+}
+
 // ─── Course status helpers ────────────────────────────────────────────────────
 
 function isCourseFinished(course: CourseEntry): boolean {
@@ -861,36 +883,38 @@ export default function TrainingCalendarPage() {
     return { rooms, matrix, usedSlots, hasData }
   }
 
-  // ── Unified day cell (shows all courses for a date) ──────────────────────────
+  // ── Unified day cell — 특이사항 목록 표시 ───────────────────────────────────
   const renderUnifiedDay = (day: Date | null) => {
-    if (!day) return <div className="bg-slate-50/30 border-r border-slate-200 min-h-[110px]" />
+    if (!day) return <div className="bg-slate-50/30 border-r border-slate-200 min-h-[90px]" />
 
     const dateStr = getLocalDateString(day)
     const todayStr = getLocalDateString(new Date())
     const isToday = dateStr === todayStr
     const isSelected = modalDate === dateStr
 
-    // Gather all courses with data on this date across all categories
-    const entries = categories.flatMap(cat =>
-      cat.courses
-        .filter(c => c.data[dateStr])
-        .map(c => ({
-          course: c,
-          dayData: c.data[dateStr],
-          alerts: c.alerts[dateStr] ?? [],
-          subject: parseCourseFileName(c.fileName).subject,
-        }))
-    )
+    // 실업자 / 근로자 항목 분리
+    const unemployedNotices: string[] = []
+    const employedNotices: string[] = []
 
-    const hasData = entries.length > 0
-    const hasAlerts = entries.some(e => e.alerts.length > 0)
-    const isDiscretionary = entries.some(e => e.dayData.isDiscretionary)
+    categories.forEach(cat => {
+      const target = isUnemployedCat(cat.name) ? unemployedNotices : employedNotices
+      cat.courses.forEach(c => {
+        const dayData = c.data[dateStr]
+        if (!dayData) return
+        const alerts = c.alerts[dateStr] ?? []
+        alerts.forEach(a => target.push(a))
+        if (dayData.isDiscretionary) target.push('재량교과')
+      })
+    })
+
+    const hasData = categories.some(cat => cat.courses.some(c => c.data[dateStr]))
+    const hasAnyNotice = unemployedNotices.length > 0 || employedNotices.length > 0
 
     return (
       <div
         onClick={() => hasData && setModalDate(dateStr)}
         className={[
-          'p-2 flex flex-col min-h-[110px] border-r border-slate-200 last:border-r-0 transition-colors',
+          'p-1.5 flex flex-col min-h-[90px] border-r border-slate-200 last:border-r-0 transition-colors',
           !hasData
             ? 'bg-slate-50'
             : day.getDay() === 0
@@ -902,61 +926,50 @@ export default function TrainingCalendarPage() {
           isSelected ? 'ring-2 ring-inset ring-blue-500' : '',
         ].join(' ')}
       >
-        {/* Date number + badges */}
-        <div className="flex items-start justify-between mb-1.5">
-          <span
-            className={[
-              'text-sm font-black w-7 h-7 flex items-center justify-center rounded-lg shrink-0',
-              isToday
-                ? 'bg-blue-600 text-white'
-                : day.getDay() === 0
-                ? 'text-rose-500'
-                : day.getDay() === 6
-                ? 'text-blue-600'
-                : 'text-slate-700',
-              !hasData ? 'opacity-30' : '',
-            ].join(' ')}
-          >
-            {day.getDate()}
-          </span>
-          <div className="flex gap-1 flex-wrap justify-end">
-            {isDiscretionary && (
-              <span className="text-[8px] font-black text-orange-600 bg-orange-50 px-1 py-0.5 rounded border border-orange-100 leading-none">
-                재량
-              </span>
-            )}
-            {hasAlerts && (
-              <span className="text-[8px] font-black text-red-600 bg-red-50 px-1 py-0.5 rounded border border-red-100 leading-none">
-                !
-              </span>
-            )}
-          </div>
-        </div>
+        {/* Date number */}
+        <span
+          className={[
+            'text-sm font-black w-6 h-6 flex items-center justify-center rounded-md mb-1 shrink-0',
+            isToday
+              ? 'bg-blue-600 text-white'
+              : day.getDay() === 0
+              ? 'text-rose-500'
+              : day.getDay() === 6
+              ? 'text-blue-600'
+              : 'text-slate-700',
+            !hasData ? 'opacity-30' : '',
+          ].join(' ')}
+        >
+          {day.getDate()}
+        </span>
 
-        {/* Course chips */}
-        {hasData ? (
-          <div className="space-y-1 flex-1">
-            {entries.map(entry => {
-              const sc = getSubjectColor(entry.subject)
-              return (
-                <div
-                  key={entry.course.id}
-                  className={`rounded px-1.5 py-1 border ${sc.bg} ${sc.border}`}
-                >
-                  <div className={`text-[10px] font-black truncate leading-tight ${sc.text}`}>
-                    {entry.subject}
-                  </div>
-                  <div className="text-[9px] text-slate-500 leading-none mt-0.5">
-                    {entry.dayData.minStart}~{entry.dayData.maxEnd}
-                  </div>
-                </div>
-              )
-            })}
+        {hasAnyNotice ? (
+          <div className="flex flex-col gap-0.5 flex-1 overflow-hidden">
+            {/* 실업자 특이사항 — 먼저, 보통 크기 */}
+            {unemployedNotices.map((n, i) => (
+              <span
+                key={`u-${i}`}
+                className="text-[10px] font-semibold text-slate-700 leading-tight truncate"
+              >
+                {n}
+              </span>
+            ))}
+            {/* 근로자 특이사항 — 작게, 회색 */}
+            {employedNotices.map((n, i) => (
+              <span
+                key={`e-${i}`}
+                className="text-[9px] text-slate-400 leading-tight truncate"
+              >
+                {n}
+              </span>
+            ))}
+          </div>
+        ) : hasData ? (
+          <div className="flex-1 flex items-center justify-center">
+            <span className="text-[9px] text-slate-300 font-medium">수업</span>
           </div>
         ) : (
-          <div className="flex-1 flex items-center justify-center">
-            <span className="text-[9px] text-slate-200 font-bold">—</span>
-          </div>
+          <div className="flex-1" />
         )}
       </div>
     )
@@ -1344,6 +1357,155 @@ export default function TrainingCalendarPage() {
             </p>
           </div>
         )}
+
+        {/* 개강·종강 현황 카드 */}
+        {allCourses.length > 0 && (() => {
+          const todayStr = getLocalDateString(new Date())
+          const tomorrow = addDaysStr(todayStr, 1)
+          const in5 = addDaysStr(todayStr, 5)
+          const in3 = addDaysStr(todayStr, 3)
+
+          const summaries = categories.flatMap(cat =>
+            cat.courses.map(course => {
+              const dates = Object.keys(course.data).sort()
+              return {
+                id: course.id,
+                subject: parseCourseFileName(course.fileName).subject || course.fileName.replace(/\.(xlsx|xls)$/i, ''),
+                categoryName: cat.name,
+                startDate: dates[0] ?? '',
+                endDate: dates[dates.length - 1] ?? '',
+              }
+            })
+          )
+
+          const todayOpening = summaries.filter(s => s.startDate === todayStr)
+          const todayClosing = summaries.filter(s => s.endDate === todayStr)
+          const openingSoon = summaries
+            .filter(s => s.startDate >= tomorrow && s.startDate <= in5)
+            .sort((a, b) => a.startDate.localeCompare(b.startDate))
+          const closingSoon = summaries
+            .filter(s => s.endDate >= tomorrow && s.endDate <= in3)
+            .sort((a, b) => a.endDate.localeCompare(b.endDate))
+
+          const hasAnything =
+            todayOpening.length > 0 || todayClosing.length > 0 ||
+            openingSoon.length > 0 || closingSoon.length > 0
+
+          if (!hasAnything) return null
+
+          return (
+            <div className="mb-4 space-y-3">
+              {/* 오늘 개강 */}
+              {todayOpening.length > 0 && (
+                <div className="rounded-xl border-2 border-emerald-400 bg-emerald-50 p-4">
+                  <div className="flex items-center gap-3 mb-3">
+                    <span className="text-2xl animate-pulse">🎉</span>
+                    <div>
+                      <p className="text-lg font-black text-emerald-800">오늘 개강!</p>
+                      <p className="text-sm text-emerald-600">{todayOpening.length}개 과정이 오늘 시작합니다</p>
+                    </div>
+                  </div>
+                  <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+                    {todayOpening.map(c => (
+                      <div key={c.id} className="bg-white rounded-lg border border-emerald-200 px-4 py-3">
+                        <p className="font-bold text-sm leading-snug text-slate-800">{c.subject}</p>
+                        <span className="inline-block mt-1 text-[10px] font-bold bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded">
+                          {c.categoryName}
+                        </span>
+                        <p className="text-[11px] text-slate-400 mt-1">{c.startDate} ~ {c.endDate}</p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* 오늘 종강 */}
+              {todayClosing.length > 0 && (
+                <div className="rounded-xl border-2 border-rose-400 bg-rose-50 p-4">
+                  <div className="flex items-center gap-3 mb-3">
+                    <span className="text-2xl">🏁</span>
+                    <div>
+                      <p className="text-lg font-black text-rose-800">오늘 종강</p>
+                      <p className="text-sm text-rose-600">{todayClosing.length}개 과정이 오늘 종강합니다</p>
+                    </div>
+                  </div>
+                  <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+                    {todayClosing.map(c => (
+                      <div key={c.id} className="bg-white rounded-lg border border-rose-200 px-4 py-3">
+                        <p className="font-bold text-sm leading-snug text-slate-800">{c.subject}</p>
+                        <span className="inline-block mt-1 text-[10px] font-bold bg-rose-100 text-rose-700 px-2 py-0.5 rounded">
+                          {c.categoryName}
+                        </span>
+                        <p className="text-[11px] text-slate-400 mt-1">{c.startDate} ~ {c.endDate}</p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* 개강 예정 / 종강 임박 */}
+              {(openingSoon.length > 0 || closingSoon.length > 0) && (
+                <div className="grid gap-3 md:grid-cols-2">
+                  {/* 개강 예정 */}
+                  <div className="bg-white rounded-xl border border-blue-200 p-4">
+                    <div className="flex items-center gap-2 mb-3">
+                      <span className="text-base">📅</span>
+                      <p className="font-black text-sm text-slate-800">개강 예정</p>
+                      <span className="ml-auto text-[10px] font-bold bg-blue-100 text-blue-700 px-2 py-0.5 rounded">
+                        {openingSoon.length}개 · 5일 이내
+                      </span>
+                    </div>
+                    {openingSoon.length === 0 ? (
+                      <p className="text-sm text-slate-400">해당 없음</p>
+                    ) : (
+                      <div className="space-y-2">
+                        {openingSoon.map(c => (
+                          <div key={c.id} className="flex items-start gap-2.5 p-2 rounded-lg bg-blue-50 border border-blue-100">
+                            <span className="text-[10px] font-black text-blue-600 bg-blue-100 rounded px-1.5 py-0.5 whitespace-nowrap shrink-0">
+                              {dDayStr(c.startDate, todayStr)}
+                            </span>
+                            <div className="min-w-0">
+                              <p className="text-xs font-semibold leading-snug text-slate-800 truncate">{c.subject}</p>
+                              <p className="text-[10px] text-slate-400 mt-0.5">{c.startDate} · {c.categoryName}</p>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* 종강 임박 */}
+                  <div className="bg-white rounded-xl border border-red-200 p-4">
+                    <div className="flex items-center gap-2 mb-3">
+                      <span className="text-base">⏰</span>
+                      <p className="font-black text-sm text-slate-800">종강 임박</p>
+                      <span className="ml-auto text-[10px] font-bold bg-red-100 text-red-700 px-2 py-0.5 rounded">
+                        {closingSoon.length}개 · 3일 이내
+                      </span>
+                    </div>
+                    {closingSoon.length === 0 ? (
+                      <p className="text-sm text-slate-400">해당 없음</p>
+                    ) : (
+                      <div className="space-y-2">
+                        {closingSoon.map(c => (
+                          <div key={c.id} className="flex items-start gap-2.5 p-2 rounded-lg bg-orange-50 border border-orange-100">
+                            <span className="text-[10px] font-black text-orange-600 bg-orange-100 rounded px-1.5 py-0.5 whitespace-nowrap shrink-0">
+                              {dDayStr(c.endDate, todayStr)}
+                            </span>
+                            <div className="min-w-0">
+                              <p className="text-xs font-semibold leading-snug text-slate-800 truncate">{c.subject}</p>
+                              <p className="text-[10px] text-slate-400 mt-0.5">종강 {c.endDate} · {c.categoryName}</p>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+          )
+        })()}
 
         {/* 통합 월 캘린더 */}
         {allCourses.length > 0 ? (
