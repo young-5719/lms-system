@@ -47,15 +47,8 @@ function toMins(t: string): number {
   return parseInt(parts[0] || '0') * 60 + parseInt(parts[1] || '0')
 }
 
-function calcEffectiveHours(
-  start: string, end: string,
-  lunchStart: string, lunchEnd: string,
-): number {
-  const sS = toMins(start), sE = toMins(end)
-  const lS = toMins(lunchStart), lE = toMins(lunchEnd)
-  const duration = Math.max(0, sE - sS)
-  const overlap = Math.max(0, Math.min(sE, lE) - Math.max(sS, lS))
-  return parseFloat(((duration - overlap) / 60).toFixed(2))
+function calcHours(start: string, end: string): number {
+  return parseFloat((Math.max(0, toMins(end) - toMins(start)) / 60).toFixed(2))
 }
 
 function parseCourseSubject(fileName: string): string {
@@ -127,6 +120,8 @@ function processData(categories: RawCategory[]): {
         monthSet.add(month)
         dayData.sessions.forEach(session => {
           if (!session.instructor) return
+          // 교과목명에 "점심"이 포함된 세션은 점심 슬롯이므로 제외
+          if (session.courseName?.includes('점심')) return
           // split multiple instructors
           session.instructor.split(/[,/]/).map(s => s.trim()).filter(Boolean).forEach(instructor => {
             if (!byInstructor[instructor]) byInstructor[instructor] = {}
@@ -138,10 +133,7 @@ function processData(categories: RawCategory[]): {
               courseName: subject,
               subject,
               timeRange: `${session.start}~${session.end}`,
-              effectiveHours: calcEffectiveHours(
-                session.start, session.end,
-                dayData.lunchStart || '13:00', dayData.lunchEnd || '14:00',
-              ),
+              effectiveHours: calcHours(session.start, session.end),
             })
           })
         })
