@@ -75,26 +75,50 @@ function getLocalDateStr(d = new Date()): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 }
 
+function formatDaysOfWeek(dates: string[]): string {
+  const dayNames = ['일', '월', '화', '수', '목', '금', '토']
+  const dayNums = [...new Set(dates.map(d => new Date(d).getDay()))].sort((a, b) => a - b)
+  if (!dayNums.length) return '-'
+  if (JSON.stringify(dayNums) === JSON.stringify([1, 2, 3, 4, 5])) return '월~금'
+  const isConsec = dayNums.every((n, i) => i === 0 || n === dayNums[i - 1] + 1)
+  if (isConsec && dayNums.length >= 3) return `${dayNames[dayNums[0]]}~${dayNames[dayNums[dayNums.length - 1]]}`
+  return dayNums.map(n => dayNames[n]).join('')
+}
+
+function fmtKRW(amount: number): string {
+  if (amount === 0) return '-'
+  return new Intl.NumberFormat('ko-KR').format(Math.round(amount)) + '원'
+}
+
+function cardId(name: string): string {
+  return `instructor-card-${name.replace(/\s+/g, '-')}`
+}
+
 // ─── Calculation ──────────────────────────────────────────────────────────────
 
 interface SessionRecord {
   date: string
   catType: string
-  courseName: string   // subject from filename
-  subject: string      // same
+  courseName: string
+  subject: string
   catRawName: string
-  timeRange: string    // "09:30~18:30"
+  start: string
+  end: string
+  room: string
   effectiveHours: number
 }
 
 interface GroupedRow {
   catType: string
   courseName: string
-  timeRange: string
-  dates: string[]
-  totalHours: number
+  daysOfWeek: string
+  rooms: string[]
   firstDate: string
   lastDate: string
+  overallTimeRange: string
+  dailyHours: number
+  totalHours: number
+  dates: string[]
 }
 
 interface InstructorData {
@@ -120,9 +144,7 @@ function processData(categories: RawCategory[]): {
         monthSet.add(month)
         dayData.sessions.forEach(session => {
           if (!session.instructor) return
-          // 교과목명에 "점심"이 포함된 세션은 점심 슬롯이므로 제외
           if (session.courseName?.includes('점심')) return
-          // split multiple instructors
           session.instructor.split(/[,/]/).map(s => s.trim()).filter(Boolean).forEach(instructor => {
             if (!byInstructor[instructor]) byInstructor[instructor] = {}
             if (!byInstructor[instructor][month]) byInstructor[instructor][month] = []
@@ -132,7 +154,9 @@ function processData(categories: RawCategory[]): {
               catRawName: cat.name,
               courseName: subject,
               subject,
-              timeRange: `${session.start}~${session.end}`,
+              start: session.start,
+              end: session.end,
+              room: session.room ?? '',
               effectiveHours: calcHours(session.start, session.end),
             })
           })
@@ -145,36 +169,56 @@ function processData(categories: RawCategory[]): {
   return { byInstructor, availableMonths }
 }
 
-function buildInstructorData(
-  sessions: SessionRecord[],
-): InstructorData['rows'] {
-  // Group by catType + courseName + timeRange
+function buildInstructorData(sessions: SessionRecord[]): GroupedRow[] {
   const map: Record<string, {
-    catType: string; courseName: string; timeRange: string
-    dates: Set<string>; totalHours: number
+    catType: string
+    courseName: string
+    dates: Set<string>
+    rooms: Set<string>
+    totalHours: number
+    minStart: string
+    maxEnd: string
   }> = {}
 
   sessions.forEach(s => {
-    const key = `${s.catType}||${s.courseName}||${s.timeRange}`
+    const key = `${s.catType}||${s.courseName}`
     if (!map[key]) {
-      map[key] = { catType: s.catType, courseName: s.courseName, timeRange: s.timeRange, dates: new Set(), totalHours: 0 }
+      map[key] = {
+        catType: s.catType,
+        courseName: s.courseName,
+        dates: new Set(),
+        rooms: new Set(),
+        totalHours: 0,
+        minStart: s.start,
+        maxEnd: s.end,
+      }
     }
     map[key].dates.add(s.date)
+    if (s.room) map[key].rooms.add(s.room)
     map[key].totalHours += s.effectiveHours
+    if (toMins(s.start) < toMins(map[key].minStart)) map[key].minStart = s.start
+    if (toMins(s.end) > toMins(map[key].maxEnd)) map[key].maxEnd = s.end
   })
 
   return Object.values(map)
     .sort((a, b) => a.catType.localeCompare(b.catType) || a.courseName.localeCompare(b.courseName))
     .map(g => {
       const sortedDates = Array.from(g.dates).sort()
+      const totalHours = parseFloat(g.totalHours.toFixed(2))
+      const dailyHours = sortedDates.length > 0
+        ? parseFloat((totalHours / sortedDates.length).toFixed(2))
+        : 0
       return {
         catType: g.catType,
         courseName: g.courseName,
-        timeRange: g.timeRange,
-        dates: sortedDates,
-        totalHours: parseFloat(g.totalHours.toFixed(2)),
+        daysOfWeek: formatDaysOfWeek(sortedDates),
+        rooms: Array.from(g.rooms).sort(),
         firstDate: sortedDates[0],
         lastDate: sortedDates[sortedDates.length - 1],
+        overallTimeRange: `${g.minStart} ~ ${g.maxEnd}`,
+        dailyHours,
+        totalHours,
+        dates: sortedDates,
       }
     })
 }
@@ -189,6 +233,8 @@ function catColor(catType: string): string {
 
 // ─── Component ────────────────────────────────────────────────────────────────
 
+const RATES_KEY = 'lms-instructor-rates'
+
 export default function InstructorHoursPage() {
   const [categories, setCategories] = useState<RawCategory[]>([])
   const [selectedMonth, setSelectedMonth] = useState<string>(() => {
@@ -197,6 +243,7 @@ export default function InstructorHoursPage() {
   })
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
   const [isInitialized, setIsInitialized] = useState(false)
+  const [rates, setRates] = useState<Record<string, string>>({})
 
   useEffect(() => {
     try {
@@ -206,15 +253,26 @@ export default function InstructorHoursPage() {
         setCategories(parsed.categories ?? [])
       }
     } catch { /* no-op */ }
+    try {
+      const savedRates = localStorage.getItem(RATES_KEY)
+      if (savedRates) setRates(JSON.parse(savedRates))
+    } catch { /* no-op */ }
     setIsInitialized(true)
   }, [])
+
+  const updateRate = (key: string, value: string) => {
+    setRates(prev => {
+      const next = { ...prev, [key]: value }
+      try { localStorage.setItem(RATES_KEY, JSON.stringify(next)) } catch { /* no-op */ }
+      return next
+    })
+  }
 
   const { byInstructor, availableMonths } = useMemo(
     () => processData(categories),
     [categories],
   )
 
-  // If selectedMonth not in availableMonths, pick the latest
   const validMonth = availableMonths.includes(selectedMonth)
     ? selectedMonth
     : availableMonths[availableMonths.length - 1] ?? selectedMonth
@@ -240,24 +298,50 @@ export default function InstructorHoursPage() {
     })
   }
 
+  const scrollToInstructor = (name: string) => {
+    setExpanded(prev => {
+      const next = new Set(prev)
+      next.add(name)
+      return next
+    })
+    setTimeout(() => {
+      document.getElementById(cardId(name))?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    }, 80)
+  }
+
   // CSV export
   const handleExport = () => {
     const [y, m] = validMonth.split('-')
-    const header = ['강사명', '구분', '과정명', '수업시간', '수업기간', '일수', '총시간(h)']
+    const header = ['강사명', '구분', '과정명', '요일', '강의실', '시작일', '종료일', '수업시간', '시간/일(h)', '총시간(h)', '일수', '책정 강사료', '계약금액']
     const rows: string[][] = []
     instructors.forEach(inst => {
       inst.rows.forEach((row, i) => {
+        const rateKey = `${inst.name}__${row.catType}__${row.courseName}`
+        const rateVal = rates[rateKey] ?? ''
+        const rateNum = parseFloat(rateVal) || 0
+        const contractAmt = rateNum * row.totalHours
         rows.push([
           i === 0 ? inst.name : '',
           row.catType,
           row.courseName,
-          row.timeRange,
-          `${row.firstDate} ~ ${row.lastDate}`,
-          String(row.dates.length),
+          row.daysOfWeek,
+          row.rooms.join(', '),
+          row.firstDate,
+          row.lastDate,
+          row.overallTimeRange,
+          String(row.dailyHours),
           String(row.totalHours),
+          String(row.dates.length),
+          rateVal ? rateVal + '원/h' : '',
+          contractAmt > 0 ? String(Math.round(contractAmt)) : '',
         ])
       })
-      rows.push(['', '', '', '', '합계', String(inst.totalDays), String(inst.totalHours)])
+      const totalContract = inst.rows.reduce((sum, row) => {
+        const rateKey = `${inst.name}__${row.catType}__${row.courseName}`
+        const rateNum = parseFloat(rates[rateKey] ?? '') || 0
+        return sum + rateNum * row.totalHours
+      }, 0)
+      rows.push(['', '', '', '', '', '', '', '합계', '', String(inst.totalHours), String(inst.totalDays), '', totalContract > 0 ? String(Math.round(totalContract)) : ''])
       rows.push([])
     })
     const csv = [header, ...rows].map(r => r.map(c => `"${c}"`).join(',')).join('\n')
@@ -274,7 +358,7 @@ export default function InstructorHoursPage() {
 
   return (
     <div className="min-h-screen bg-slate-50 p-4 md:p-8">
-      <div className="max-w-[1200px] mx-auto space-y-6">
+      <div className="max-w-[1300px] mx-auto space-y-6">
 
         {/* 헤더 */}
         <div className="bg-white rounded-[2rem] shadow-xl border border-slate-200 px-8 py-6 flex flex-col md:flex-row md:items-center justify-between gap-4">
@@ -347,12 +431,14 @@ export default function InstructorHoursPage() {
                     {instructors.map(inst => (
                       <tr
                         key={inst.name}
-                        onClick={() => toggleExpand(inst.name)}
                         className="border-b border-slate-50 hover:bg-slate-50 cursor-pointer transition-colors"
                       >
-                        <td className="py-2.5 pr-6 font-bold text-slate-800 flex items-center gap-1.5">
+                        <td
+                          className="py-2.5 pr-6 font-bold text-blue-700 hover:text-blue-900 flex items-center gap-1.5"
+                          onClick={() => scrollToInstructor(inst.name)}
+                        >
                           <User className="w-3.5 h-3.5 text-slate-400" />
-                          {inst.name}
+                          <span className="underline underline-offset-2 decoration-dotted">{inst.name}</span>
                         </td>
                         <td className="py-2.5 pr-6 text-right font-black text-blue-700">
                           {fmtHours(inst.totalHours)}
@@ -376,8 +462,17 @@ export default function InstructorHoursPage() {
             {/* 강사별 상세 카드 */}
             {instructors.map(inst => {
               const isOpen = expanded.has(inst.name)
+              const totalContract = inst.rows.reduce((sum, row) => {
+                const rateKey = `${inst.name}__${row.catType}__${row.courseName}`
+                const rateNum = parseFloat(rates[rateKey] ?? '') || 0
+                return sum + rateNum * row.totalHours
+              }, 0)
               return (
-                <div key={inst.name} className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+                <div
+                  key={inst.name}
+                  id={cardId(inst.name)}
+                  className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden scroll-mt-6"
+                >
                   {/* 강사 헤더 */}
                   <button
                     onClick={() => toggleExpand(inst.name)}
@@ -410,54 +505,97 @@ export default function InstructorHoursPage() {
                   {isOpen && (
                     <div className="border-t border-slate-100">
                       <div className="overflow-x-auto">
-                        <table className="w-full text-sm min-w-[640px]">
+                        <table className="w-full text-sm min-w-[1100px]">
                           <thead>
                             <tr className="bg-slate-50 border-b border-slate-100">
-                              <th className="px-4 py-2.5 text-left text-xs font-semibold text-slate-500 w-20">구분</th>
-                              <th className="px-4 py-2.5 text-left text-xs font-semibold text-slate-500">과정명</th>
-                              <th className="px-4 py-2.5 text-center text-xs font-semibold text-slate-500 w-32">수업시간</th>
-                              <th className="px-4 py-2.5 text-center text-xs font-semibold text-slate-500 w-40">수업기간</th>
-                              <th className="px-4 py-2.5 text-right text-xs font-semibold text-slate-500 w-16">일수</th>
-                              <th className="px-4 py-2.5 text-right text-xs font-semibold text-slate-500 w-20">시간</th>
+                              <th className="px-3 py-2.5 text-left text-xs font-semibold text-slate-500 w-20">구분</th>
+                              <th className="px-3 py-2.5 text-left text-xs font-semibold text-slate-500">과정명</th>
+                              <th className="px-3 py-2.5 text-center text-xs font-semibold text-slate-500 w-16">요일</th>
+                              <th className="px-3 py-2.5 text-center text-xs font-semibold text-slate-500 w-24">강의실</th>
+                              <th className="px-3 py-2.5 text-center text-xs font-semibold text-slate-500 w-24">시작일</th>
+                              <th className="px-3 py-2.5 text-center text-xs font-semibold text-slate-500 w-24">종료일</th>
+                              <th className="px-3 py-2.5 text-center text-xs font-semibold text-slate-500 w-36">책정 강사료</th>
+                              <th className="px-3 py-2.5 text-center text-xs font-semibold text-slate-500 w-32">수업시간</th>
+                              <th className="px-3 py-2.5 text-right text-xs font-semibold text-slate-500 w-20">시간/일</th>
+                              <th className="px-3 py-2.5 text-right text-xs font-semibold text-slate-500 w-20">총시간</th>
+                              <th className="px-3 py-2.5 text-right text-xs font-semibold text-slate-500 w-16">일수</th>
+                              <th className="px-3 py-2.5 text-right text-xs font-semibold text-slate-500 w-28">계약금액</th>
                             </tr>
                           </thead>
                           <tbody>
-                            {inst.rows.map((row, i) => (
-                              <tr key={i} className="border-b border-slate-50 hover:bg-slate-50/50">
-                                <td className="px-4 py-3">
-                                  <span className={`text-[10px] font-bold px-2 py-0.5 rounded border ${catColor(row.catType)}`}>
-                                    {row.catType}
-                                  </span>
-                                </td>
-                                <td className="px-4 py-3 text-slate-800 font-medium leading-snug">
-                                  {row.courseName}
-                                </td>
-                                <td className="px-4 py-3 text-center">
-                                  <div className="flex items-center justify-center gap-1 text-slate-600 text-xs font-mono">
-                                    <Clock className="w-3 h-3 text-slate-400" />
-                                    {row.timeRange}
-                                  </div>
-                                </td>
-                                <td className="px-4 py-3 text-center text-xs text-slate-500">
-                                  {row.firstDate === row.lastDate
-                                    ? row.firstDate
-                                    : `${row.firstDate} ~ ${row.lastDate}`}
-                                </td>
-                                <td className="px-4 py-3 text-right text-slate-600 font-medium">
-                                  {row.dates.length}일
-                                </td>
-                                <td className="px-4 py-3 text-right font-black text-blue-700">
-                                  {fmtHours(row.totalHours)}
-                                </td>
-                              </tr>
-                            ))}
+                            {inst.rows.map((row, i) => {
+                              const rateKey = `${inst.name}__${row.catType}__${row.courseName}`
+                              const rateVal = rates[rateKey] ?? ''
+                              const rateNum = parseFloat(rateVal) || 0
+                              const contractAmt = rateNum * row.totalHours
+                              return (
+                                <tr key={i} className="border-b border-slate-50 hover:bg-slate-50/50">
+                                  <td className="px-3 py-3">
+                                    <span className={`text-[10px] font-bold px-2 py-0.5 rounded border ${catColor(row.catType)}`}>
+                                      {row.catType}
+                                    </span>
+                                  </td>
+                                  <td className="px-3 py-3 text-slate-800 font-medium leading-snug">
+                                    {row.courseName}
+                                  </td>
+                                  <td className="px-3 py-3 text-center text-xs font-medium text-slate-600">
+                                    {row.daysOfWeek}
+                                  </td>
+                                  <td className="px-3 py-3 text-center text-xs text-slate-500">
+                                    {row.rooms.length > 0 ? row.rooms.join(', ') : '-'}
+                                  </td>
+                                  <td className="px-3 py-3 text-center text-xs text-slate-500">
+                                    {row.firstDate}
+                                  </td>
+                                  <td className="px-3 py-3 text-center text-xs text-slate-500">
+                                    {row.lastDate}
+                                  </td>
+                                  <td className="px-3 py-3">
+                                    <div className="flex items-center gap-1">
+                                      <input
+                                        type="number"
+                                        min="0"
+                                        step="1000"
+                                        value={rateVal}
+                                        onChange={e => updateRate(rateKey, e.target.value)}
+                                        placeholder="원/h"
+                                        className="w-full text-right text-xs border border-slate-200 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-blue-300 focus:border-blue-400 bg-white"
+                                        onClick={e => e.stopPropagation()}
+                                      />
+                                    </div>
+                                  </td>
+                                  <td className="px-3 py-3 text-center">
+                                    <div className="flex items-center justify-center gap-1 text-slate-600 text-xs font-mono">
+                                      <Clock className="w-3 h-3 text-slate-400" />
+                                      {row.overallTimeRange}
+                                    </div>
+                                  </td>
+                                  <td className="px-3 py-3 text-right text-xs text-slate-600">
+                                    {fmtHours(row.dailyHours)}
+                                  </td>
+                                  <td className="px-3 py-3 text-right font-black text-blue-700">
+                                    {fmtHours(row.totalHours)}
+                                  </td>
+                                  <td className="px-3 py-3 text-right text-slate-600 font-medium">
+                                    {row.dates.length}일
+                                  </td>
+                                  <td className="px-3 py-3 text-right text-sm font-bold text-slate-700">
+                                    {fmtKRW(contractAmt)}
+                                  </td>
+                                </tr>
+                              )
+                            })}
                           </tbody>
                           <tfoot>
                             <tr className="bg-slate-900 text-white">
-                              <td colSpan={4} className="px-4 py-3 text-sm font-bold">합계</td>
-                              <td className="px-4 py-3 text-right font-bold">{inst.totalDays}일</td>
-                              <td className="px-4 py-3 text-right font-black text-blue-300">
+                              <td colSpan={8} className="px-3 py-3 text-sm font-bold">합계</td>
+                              <td className="px-3 py-3 text-right text-sm font-bold text-slate-300">-</td>
+                              <td className="px-3 py-3 text-right font-black text-blue-300">
                                 {fmtHours(inst.totalHours)}
+                              </td>
+                              <td className="px-3 py-3 text-right font-bold">{inst.totalDays}일</td>
+                              <td className="px-3 py-3 text-right font-bold text-amber-300">
+                                {fmtKRW(totalContract)}
                               </td>
                             </tr>
                           </tfoot>

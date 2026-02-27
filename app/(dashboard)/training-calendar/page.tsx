@@ -391,6 +391,8 @@ interface MatrixCell {
   fileName?: string    // full name without extension
   courseName?: string  // 교과목 from Excel column
   instructor?: string
+  notices?: string[]
+  courseId?: string
 }
 
 interface CellRenderInfo {
@@ -401,6 +403,8 @@ interface CellRenderInfo {
   fileName?: string
   courseName?: string  // 교과목 from Excel column
   instructor?: string
+  notices?: string[]
+  courseId?: string
 }
 
 function computeCellGrid(
@@ -443,7 +447,7 @@ function computeCellGrid(
       grid[room][slot.start] = {
         skip: false, rowSpan: span, occupied: true,
         subject: info.subject, instructor: info.instructor, fileName: info.fileName,
-        courseName: info.courseName,
+        courseName: info.courseName, notices: info.notices, courseId: info.courseId,
       }
       for (let j = 1; j < span; j++) {
         grid[room][usedSlots[i + j].start] = { skip: true, rowSpan: 1, occupied: true }
@@ -581,6 +585,8 @@ export default function TrainingCalendarPage() {
   const [activeCategory, setActiveCategory] = useState<string | null>(null)
   const [activeCourseId, setActiveCourseId] = useState<string | null>(null)
   const [modalDate, setModalDate] = useState<string | null>(null)
+  const [selectedModalCourse, setSelectedModalCourse] = useState<string | null>(null)
+  const [courseSearch, setCourseSearch] = useState('')
   const [expandedMonths, setExpandedMonths] = useState<Set<string>>(new Set())
   const [isDragging, setIsDragging] = useState(false)
   const [isGenerating, setIsGenerating] = useState(false)
@@ -596,12 +602,13 @@ export default function TrainingCalendarPage() {
   const currentCategory =
     categories.find(c => c.id === activeCategory) ?? categories[0] ?? null
 
-  const activeCourse =
-    currentCategory?.courses.find(c => c.id === activeCourseId) ??
-    currentCategory?.courses[0] ??
-    null
-
   const allCourses = categories.flatMap(cat => cat.courses)
+
+  const activeCourse =
+    allCourses.find(c => c.id === activeCourseId) ??
+    allCourses.find(c => !isCourseFinished(c)) ??
+    allCourses[0] ??
+    null
 
   // ── 초기 로드: localStorage → 상태 복원 ─────────────────────────────────────
   useEffect(() => {
@@ -622,6 +629,9 @@ export default function TrainingCalendarPage() {
     } catch { /* no-op */ }
     setIsInitialized(true)
   }, [])
+
+  // ── 모달 닫힐 때 선택된 과정 초기화 ─────────────────────────────────────────
+  useEffect(() => { setSelectedModalCourse(null) }, [modalDate])
 
   // ── 전체 상태 저장 (초기화 완료 후에만) ─────────────────────────────────────
   useEffect(() => {
@@ -842,14 +852,21 @@ export default function TrainingCalendarPage() {
 
   // ── Room matrix ───────────────────────────────────────────────────────────────
   const computeRoomMatrix = (dateStr: string) => {
-    // Attach parsed subject + fileName to each session for display in modal
+    // Attach parsed subject + fileName + notices to each session for display in modal
     const allSessions = allCourses.flatMap(c => {
       const { subject } = parseCourseFileName(c.fileName)
       const fullName = c.fileName.replace(/\.(xlsx|xls)$/i, '')
-      return (c.data[dateStr]?.sessions ?? []).map(s => ({
+      const dayData = c.data[dateStr]
+      const notices = [
+        ...(c.alerts[dateStr] ?? []),
+        ...(dayData?.isDiscretionary ? ['재량교과'] : []),
+      ]
+      return (dayData?.sessions ?? []).map(s => ({
         ...s,
         subject,
         fileName: fullName,
+        notices,
+        courseId: c.id,
       }))
     })
 
@@ -866,7 +883,7 @@ export default function TrainingCalendarPage() {
           s => s.room === room && s.start < slot.end && s.end > slot.start
         )
         matrix[room][slot.start] = session
-          ? { occupied: true, subject: session.subject, courseName: session.courseName, instructor: session.instructor, fileName: session.fileName }
+          ? { occupied: true, subject: session.subject, courseName: session.courseName, instructor: session.instructor, fileName: session.fileName, notices: session.notices, courseId: session.courseId }
           : { occupied: false }
       }
     }
@@ -1010,7 +1027,10 @@ export default function TrainingCalendarPage() {
       )
       .sort((a, b) => (b.isUnemployed ? 1 : 0) - (a.isUnemployed ? 1 : 0))
 
+    const selectedEntry = perCourseData.find(e => e.id === selectedModalCourse) ?? null
+
     return (
+      <>
       <div
         className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-3"
         onClick={() => setModalDate(null)}
@@ -1033,158 +1053,16 @@ export default function TrainingCalendarPage() {
             </button>
           </div>
 
-          <div className="overflow-auto flex-1 p-5 space-y-6">
-
-            {/* ── 섹션 1: 과정별 세부 일정 ── */}
-            {perCourseData.length > 0 ? (
-              <section className="space-y-5">
-                <h3 className="text-sm font-black text-slate-500 uppercase tracking-widest flex items-center gap-2">
-                  <BookOpen className="w-4 h-4" /> 과정별 세부 일정
-                </h3>
-
-                {/* 실업자 계열 */}
-                {perCourseData.filter(e => e.isUnemployed).length > 0 && (
-                  <div>
-                    <div className="flex items-center gap-3 mb-3">
-                      <span className="text-xs font-black text-emerald-700 bg-emerald-50 border border-emerald-200 px-3 py-1 rounded-full">
-                        실업자 계열
-                      </span>
-                      <div className="flex-1 border-t border-emerald-200" />
-                    </div>
-                    <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-                      {perCourseData.filter(e => e.isUnemployed).map(entry => {
-                        const sc = getSubjectColor(entry.subject)
-                        return (
-                          <div
-                            key={entry.id}
-                            className={`rounded-xl border-2 p-4 flex flex-col gap-3 ${sc.border} bg-white`}
-                          >
-                            <div className="flex items-start justify-between gap-2">
-                              <p className={`font-black text-[15px] leading-snug ${sc.text}`}>{entry.subject}</p>
-                              <span className={`shrink-0 text-[10px] font-bold px-2 py-0.5 rounded-full border ${sc.bg} ${sc.border} ${sc.text}`}>{entry.catName}</span>
-                            </div>
-                            <div className="flex items-center gap-2">
-                              <Clock className="w-4 h-4 text-slate-400 shrink-0" />
-                              <span className="text-sm font-black text-slate-700">{entry.timeRange}</span>
-                            </div>
-                            {entry.subjects.length > 0 && (
-                              <div className="space-y-1.5">
-                                {entry.subjects.map((s, i) => (
-                                  <div key={i} className="flex items-start gap-2">
-                                    <span className={`mt-1 w-1.5 h-1.5 rounded-full shrink-0 ${sc.text.replace('text-', 'bg-')}`} />
-                                    <span className="text-sm text-slate-700 leading-snug">{s}</span>
-                                  </div>
-                                ))}
-                              </div>
-                            )}
-                            {entry.instructors.length > 0 && (
-                              <div className="flex items-center gap-1.5 pt-1 border-t border-slate-100">
-                                <User className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-                                <span className="text-xs text-slate-500">{entry.instructors.map(maskName).join(' · ')}</span>
-                              </div>
-                            )}
-                            {entry.notices.length > 0 && (
-                              <div className="pt-2 border-t-2 border-red-100 space-y-1">
-                                {entry.notices.map((n, i) => (
-                                  <div key={i} className="flex items-start gap-1.5">
-                                    <AlertTriangle className="w-3.5 h-3.5 text-red-500 shrink-0 mt-0.5" />
-                                    <span className="text-sm font-black text-red-600 leading-snug">{n}</span>
-                                  </div>
-                                ))}
-                              </div>
-                            )}
-                          </div>
-                        )
-                      })}
-                    </div>
-                  </div>
-                )}
-
-                {/* 근로자 계열 */}
-                {perCourseData.filter(e => !e.isUnemployed).length > 0 && (
-                  <div>
-                    <div className="flex items-center gap-3 mb-3">
-                      <span className="text-xs font-black text-blue-700 bg-blue-50 border border-blue-200 px-3 py-1 rounded-full">
-                        근로자 계열
-                      </span>
-                      <div className="flex-1 border-t border-blue-200" />
-                    </div>
-                    <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-                      {perCourseData.filter(e => !e.isUnemployed).map(entry => {
-                        const sc = getSubjectColor(entry.subject)
-                        return (
-                      <div
-                        key={entry.id}
-                        className={`rounded-xl border-2 p-4 flex flex-col gap-3 ${sc.border} bg-white`}
-                      >
-                        {/* 과정명 + 카테고리 */}
-                        <div className="flex items-start justify-between gap-2">
-                          <p className={`font-black text-[15px] leading-snug ${sc.text}`}>
-                            {entry.subject}
-                          </p>
-                          <span className={`shrink-0 text-[10px] font-bold px-2 py-0.5 rounded-full border ${sc.bg} ${sc.border} ${sc.text}`}>
-                            {entry.catName}
-                          </span>
-                        </div>
-
-                        {/* 시간대 */}
-                        <div className="flex items-center gap-2">
-                          <Clock className="w-4 h-4 text-slate-400 shrink-0" />
-                          <span className="text-sm font-black text-slate-700">{entry.timeRange}</span>
-                        </div>
-
-                        {/* 교과목 목록 */}
-                        {entry.subjects.length > 0 && (
-                          <div className="space-y-1.5">
-                            {entry.subjects.map((s, i) => (
-                              <div key={i} className="flex items-start gap-2">
-                                <span className={`mt-1 w-1.5 h-1.5 rounded-full shrink-0 ${sc.text.replace('text-', 'bg-')}`} />
-                                <span className="text-sm text-slate-700 leading-snug">{s}</span>
-                              </div>
-                            ))}
-                          </div>
-                        )}
-
-                        {/* 강사 */}
-                        {entry.instructors.length > 0 && (
-                          <div className="flex items-center gap-1.5 pt-1 border-t border-slate-100">
-                            <User className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-                            <span className="text-xs text-slate-500">
-                              {entry.instructors.map(maskName).join(' · ')}
-                            </span>
-                          </div>
-                        )}
-
-                        {/* 특이사항 — 빨간 볼드, 과정 카드 안에 통합 */}
-                        {entry.notices.length > 0 && (
-                          <div className="pt-2 border-t-2 border-red-100 space-y-1">
-                            {entry.notices.map((n, i) => (
-                              <div key={i} className="flex items-start gap-1.5">
-                                <AlertTriangle className="w-3.5 h-3.5 text-red-500 shrink-0 mt-0.5" />
-                                <span className="text-sm font-black text-red-600 leading-snug">{n}</span>
-                              </div>
-                            ))}
-                          </div>
-                        )}
-                      </div>
-                    )
-                  })}
-                    </div>
-                  </div>
-                )}
-
-              </section>
-            ) : (
-              <div className="py-6 text-center text-slate-400 text-sm border border-dashed border-slate-200 rounded-xl">
+          <div className="overflow-auto flex-1 p-5">
+            {!hasData ? (
+              <div className="py-10 text-center text-slate-400 text-sm border border-dashed border-slate-200 rounded-xl">
                 해당 날짜에 등록된 수업이 없습니다
               </div>
-            )}
-
-            {/* ── 섹션 2: 강의장 시간표 ── */}
-            {hasData && (
+            ) : (
               <section>
                 <h3 className="text-sm font-black text-slate-500 uppercase tracking-widest mb-3 flex items-center gap-2">
                   <LayoutGrid className="w-4 h-4" /> 강의장 시간표
+                  <span className="text-[11px] font-normal normal-case text-slate-400">· 과정 클릭 시 세부 정보</span>
                 </h3>
                 <div className="overflow-x-auto rounded-xl border border-slate-200">
                   <table className="w-full border-collapse text-sm min-w-[600px]">
@@ -1219,11 +1097,18 @@ export default function TrainingCalendarPage() {
                                 )
                               }
                               const sc = getSubjectColor(cell.subject ?? '')
+                              const isSelected = selectedModalCourse === cell.courseId
                               return (
                                 <td
                                   key={room}
                                   rowSpan={cell.rowSpan}
-                                  className={`p-2 border-b border-r last:border-r-0 ${sc.bg} ${sc.border} align-top`}
+                                  onClick={() => setSelectedModalCourse(isSelected ? null : (cell.courseId ?? null))}
+                                  className={[
+                                    `p-2 border-b border-r last:border-r-0 ${sc.bg} align-top cursor-pointer transition-all`,
+                                    isSelected
+                                      ? `ring-2 ring-inset ring-blue-500 ${sc.border}`
+                                      : `${sc.border} hover:brightness-95`,
+                                  ].join(' ')}
                                 >
                                   <div className="space-y-0.5">
                                     <div className={`font-black text-[12px] leading-snug line-clamp-3 ${sc.text}`}>
@@ -1240,6 +1125,16 @@ export default function TrainingCalendarPage() {
                                         <span className="text-[10px] text-slate-500 truncate">
                                           {maskName(cell.instructor)}
                                         </span>
+                                      </div>
+                                    )}
+                                    {cell.notices && cell.notices.length > 0 && (
+                                      <div className="mt-1 pt-1 border-t border-dashed border-red-200 space-y-0.5">
+                                        {cell.notices.map((n, ni) => (
+                                          <div key={ni} className="flex items-start gap-0.5">
+                                            <AlertTriangle className="w-2.5 h-2.5 text-red-400 shrink-0 mt-0.5" />
+                                            <span className="text-[9px] text-red-600 font-bold leading-tight">{n}</span>
+                                          </div>
+                                        ))}
                                       </div>
                                     )}
                                   </div>
@@ -1280,10 +1175,81 @@ export default function TrainingCalendarPage() {
                 })()}
               </section>
             )}
-
           </div>
         </div>
       </div>
+
+      {/* ── 과정 세부 팝업 (강의장 시간표 셀 클릭 시) ── */}
+      {selectedEntry && (() => {
+        const sc = getSubjectColor(selectedEntry.subject)
+        return (
+          <div
+            className="fixed inset-0 z-[60] flex items-center justify-center p-4"
+            onClick={() => setSelectedModalCourse(null)}
+          >
+            <div
+              className={`bg-white rounded-2xl shadow-2xl w-full max-w-md max-h-[80vh] overflow-y-auto border-2 ${sc.border}`}
+              onClick={e => e.stopPropagation()}
+            >
+              {/* 팝업 헤더 */}
+              <div className={`flex items-start justify-between gap-2 p-5 border-b ${sc.border}`}>
+                <div>
+                  <p className={`font-black text-lg leading-snug ${sc.text}`}>{selectedEntry.subject}</p>
+                  <span className={`mt-1 inline-block text-[10px] font-bold px-2 py-0.5 rounded-full border ${sc.bg} ${sc.border} ${sc.text}`}>
+                    {selectedEntry.catName}
+                  </span>
+                </div>
+                <button
+                  onClick={() => setSelectedModalCourse(null)}
+                  className="text-slate-300 hover:text-slate-600 transition-colors shrink-0 mt-0.5 p-1"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+              {/* 팝업 본문 */}
+              <div className="p-5 flex flex-col gap-4">
+                {/* 시간대 */}
+                <div className="flex items-center gap-2">
+                  <Clock className="w-4 h-4 text-slate-400 shrink-0" />
+                  <span className="text-sm font-black text-slate-700">{selectedEntry.timeRange}</span>
+                </div>
+                {/* 교과목 목록 */}
+                {selectedEntry.subjects.length > 0 && (
+                  <div className="space-y-1.5">
+                    {selectedEntry.subjects.map((s, i) => (
+                      <div key={i} className="flex items-start gap-2">
+                        <span className={`mt-1 w-1.5 h-1.5 rounded-full shrink-0 ${sc.text.replace('text-', 'bg-')}`} />
+                        <span className="text-sm text-slate-700 leading-snug">{s}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                {/* 강사 */}
+                {selectedEntry.instructors.length > 0 && (
+                  <div className="flex items-center gap-1.5 pt-1 border-t border-slate-100">
+                    <User className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                    <span className="text-sm text-slate-500">
+                      {selectedEntry.instructors.map(maskName).join(' · ')}
+                    </span>
+                  </div>
+                )}
+                {/* 특이사항 */}
+                {selectedEntry.notices.length > 0 && (
+                  <div className="pt-3 border-t-2 border-red-100 space-y-2">
+                    {selectedEntry.notices.map((n, i) => (
+                      <div key={i} className="flex items-start gap-2">
+                        <AlertTriangle className="w-4 h-4 text-red-500 shrink-0 mt-0.5" />
+                        <span className="text-sm font-black text-red-600 leading-snug">{n}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        )
+      })()}
+      </>
     )
   }
 
@@ -1367,110 +1333,6 @@ export default function TrainingCalendarPage() {
             </label>
           </div>
         </header>
-
-        {/* 카테고리 & 과정 탭 */}
-        {categories.length > 0 && (
-          <div className="mb-6 bg-white rounded-2xl border border-slate-200 shadow-sm p-4 space-y-3">
-            {/* 카테고리 행 */}
-            <div className="flex items-center gap-2 flex-wrap">
-              <span className="text-xs font-bold text-slate-500 shrink-0 w-14">카테고리</span>
-              {categories.map(cat => {
-                const isActive =
-                  cat.id === activeCategory ||
-                  (!activeCategory && categories[0]?.id === cat.id)
-                return (
-                  <div
-                    key={cat.id}
-                    className={[
-                      'flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold transition-all border-2 cursor-pointer',
-                      isActive
-                        ? 'bg-indigo-600 text-white border-indigo-600 shadow-sm'
-                        : 'bg-white text-slate-700 border-slate-200 hover:border-indigo-300 hover:text-indigo-600',
-                    ].join(' ')}
-                    onClick={() => {
-                      setActiveCategory(cat.id)
-                      setActiveCourseId(null)
-                    }}
-                  >
-                    <FolderOpen className="w-3.5 h-3.5 flex-shrink-0" />
-                    <span className="max-w-[160px] truncate">{cat.name}</span>
-                    <span className={`text-xs font-normal ${isActive ? 'text-indigo-200' : 'text-slate-400'}`}>
-                      ({cat.courses.length})
-                    </span>
-                    <button
-                      onClick={e => { e.stopPropagation(); handleRemoveCategory(cat.id) }}
-                      className={`ml-0.5 p-0.5 rounded transition-colors ${
-                        isActive ? 'text-indigo-200 hover:text-white' : 'text-slate-300 hover:text-red-500'
-                      }`}
-                      title="카테고리 삭제"
-                    >
-                      <X className="w-3 h-3" />
-                    </button>
-                  </div>
-                )
-              })}
-            </div>
-
-            {/* 과정 행 (선택된 카테고리 내) */}
-            {currentCategory && currentCategory.courses.length > 0 && (
-              <div className="flex items-center gap-2 flex-wrap pl-2 border-l-4 border-indigo-200">
-                <span className="text-xs font-bold text-slate-400 shrink-0 w-14">과정</span>
-                {[...currentCategory.courses]
-                  .sort((a, b) => {
-                    const af = isCourseFinished(a), bf = isCourseFinished(b)
-                    if (af === bf) return 0
-                    return af ? 1 : -1
-                  })
-                  .map(course => {
-                    const isActive =
-                      course.id === activeCourseId ||
-                      (!activeCourseId && currentCategory.courses[0]?.id === course.id)
-                    const finished = isCourseFinished(course)
-                    return (
-                      <div
-                        key={course.id}
-                        className={[
-                          'flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all border-2 cursor-pointer',
-                          finished ? 'opacity-50' : '',
-                          isActive
-                            ? finished
-                              ? 'bg-slate-500 text-white border-slate-500 shadow-sm'
-                              : 'bg-blue-600 text-white border-blue-600 shadow-sm'
-                            : finished
-                              ? 'bg-white text-slate-400 border-slate-200 hover:border-slate-400 hover:text-slate-600'
-                              : 'bg-white text-slate-600 border-slate-200 hover:border-blue-300 hover:text-blue-600',
-                        ].join(' ')}
-                        onClick={() => setActiveCourseId(course.id)}
-                      >
-                        <FileText className="w-3 h-3 flex-shrink-0" />
-                        <span className="max-w-[180px] truncate">
-                          {course.fileName.replace(/\.(xlsx|xls)$/i, '')}
-                        </span>
-                        {finished && (
-                          <span className="text-[9px] font-black bg-slate-200 text-slate-500 px-1.5 py-0.5 rounded shrink-0">
-                            종강
-                          </span>
-                        )}
-                        <button
-                          onClick={e => { e.stopPropagation(); handleRemoveCourse(currentCategory.id, course.id) }}
-                          className={`ml-0.5 p-0.5 rounded transition-colors ${
-                            isActive ? 'text-blue-200 hover:text-white' : 'text-slate-300 hover:text-red-500'
-                          }`}
-                          title="과정 삭제"
-                        >
-                          <X className="w-2.5 h-2.5" />
-                        </button>
-                      </div>
-                    )
-                  })}
-              </div>
-            )}
-
-            <p className="text-xs text-slate-400 pl-2">
-              강의장 현황은 모든 카테고리·과정 합산 · 수업 날짜 클릭 시 팝업
-            </p>
-          </div>
-        )}
 
         {/* 개강·종강 현황 카드 */}
         {allCourses.length > 0 && (() => {
@@ -1708,6 +1570,180 @@ export default function TrainingCalendarPage() {
             </p>
           </div>
         )}
+
+        {/* ── 카테고리 & 과정 관리 (최하단) ── */}
+        {categories.length > 0 && (() => {
+          type CourseItem = { course: CourseEntry; catId: string; catType: '실업자' | '근로자' | '일반' }
+          const allItems: CourseItem[] = categories.flatMap(cat => {
+            const catType: '실업자' | '근로자' | '일반' = isUnemployedCat(cat.name)
+              ? '실업자'
+              : (cat.name.includes('근로자') || cat.name.includes('재직자'))
+              ? '근로자'
+              : '일반'
+            return cat.courses.map(c => ({ course: c, catId: cat.id, catType }))
+          })
+
+          const q = courseSearch.trim().toLowerCase()
+          const filtered = q
+            ? allItems.filter(({ course }) =>
+                course.fileName.toLowerCase().includes(q)
+              )
+            : allItems
+
+          const activeCourseItems = filtered.filter(({ course }) => !isCourseFinished(course))
+          const finishedCourseItems = filtered.filter(({ course }) => isCourseFinished(course))
+          const defaultActiveId = allCourses.find(c => !isCourseFinished(c))?.id
+
+          const groups = [
+            {
+              label: '실업자', count: allItems.filter(i => !isCourseFinished(i.course) && i.catType === '실업자').length,
+              items: activeCourseItems.filter(({ catType }) => catType === '실업자'),
+              labelCls: 'text-emerald-700 bg-emerald-50 border-emerald-200',
+              activeCls: 'bg-emerald-600 text-white border-emerald-600',
+              inactiveCls: 'bg-white text-slate-700 border-slate-200 hover:border-emerald-300 hover:text-emerald-700',
+              deleteCls: 'text-emerald-200 hover:text-white',
+            },
+            {
+              label: '근로자', count: allItems.filter(i => !isCourseFinished(i.course) && i.catType === '근로자').length,
+              items: activeCourseItems.filter(({ catType }) => catType === '근로자'),
+              labelCls: 'text-blue-700 bg-blue-50 border-blue-200',
+              activeCls: 'bg-blue-600 text-white border-blue-600',
+              inactiveCls: 'bg-white text-slate-700 border-slate-200 hover:border-blue-300 hover:text-blue-700',
+              deleteCls: 'text-blue-200 hover:text-white',
+            },
+            {
+              label: '일반', count: allItems.filter(i => !isCourseFinished(i.course) && i.catType === '일반').length,
+              items: activeCourseItems.filter(({ catType }) => catType === '일반'),
+              labelCls: 'text-slate-700 bg-slate-100 border-slate-300',
+              activeCls: 'bg-slate-700 text-white border-slate-700',
+              inactiveCls: 'bg-white text-slate-700 border-slate-200 hover:border-slate-400 hover:text-slate-900',
+              deleteCls: 'text-slate-300 hover:text-white',
+            },
+            {
+              label: '종강한 과정', count: allItems.filter(i => isCourseFinished(i.course)).length,
+              items: finishedCourseItems,
+              labelCls: 'text-stone-600 bg-stone-100 border-stone-300',
+              activeCls: 'bg-stone-500 text-white border-stone-500',
+              inactiveCls: 'bg-white text-stone-600 border-stone-200 hover:border-stone-400',
+              deleteCls: 'text-stone-300 hover:text-white',
+            },
+          ].filter(g => g.count > 0)
+
+          return (
+            <div className="mt-6 bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+              {/* 헤더 */}
+              <div className="flex items-center justify-between px-5 py-3 border-b border-slate-100 bg-slate-50">
+                <div className="flex items-center gap-3">
+                  <FolderOpen className="w-4 h-4 text-slate-500" />
+                  <span className="text-sm font-black text-slate-700">카테고리 & 과정 관리</span>
+                  <span className="text-xs text-slate-400">{allCourses.length}개 과정</span>
+                </div>
+                {/* 카테고리 삭제 버튼들 */}
+                <div className="flex items-center gap-1.5 flex-wrap justify-end">
+                  {categories.map(cat => {
+                    const isActive = cat.id === activeCategory || (!activeCategory && categories[0]?.id === cat.id)
+                    return (
+                      <div
+                        key={cat.id}
+                        className={[
+                          'flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-semibold border cursor-pointer transition-all',
+                          isActive
+                            ? 'bg-indigo-600 text-white border-indigo-600'
+                            : 'bg-white text-slate-600 border-slate-200 hover:border-indigo-300 hover:text-indigo-600',
+                        ].join(' ')}
+                        onClick={() => { setActiveCategory(cat.id); setActiveCourseId(null) }}
+                      >
+                        <FolderOpen className="w-3 h-3 flex-shrink-0" />
+                        <span className="max-w-[120px] truncate">{cat.name}</span>
+                        <span className={`text-[10px] ${isActive ? 'text-indigo-200' : 'text-slate-400'}`}>({cat.courses.length})</span>
+                        <button
+                          onClick={e => { e.stopPropagation(); handleRemoveCategory(cat.id) }}
+                          className={`p-0.5 rounded transition-colors ml-0.5 ${isActive ? 'text-indigo-200 hover:text-white' : 'text-slate-300 hover:text-red-500'}`}
+                          title="카테고리 삭제"
+                        >
+                          <X className="w-2.5 h-2.5" />
+                        </button>
+                      </div>
+                    )
+                  })}
+                </div>
+              </div>
+
+              {/* 검색 */}
+              <div className="px-5 py-3 border-b border-slate-100">
+                <input
+                  type="text"
+                  value={courseSearch}
+                  onChange={e => setCourseSearch(e.target.value)}
+                  placeholder="과정명 검색..."
+                  className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-300 focus:border-indigo-400 bg-slate-50 placeholder:text-slate-400"
+                />
+              </div>
+
+              {/* 과정 목록 — 그룹별, 최대 높이 고정 후 스크롤 */}
+              <div className="divide-y divide-slate-100 max-h-72 overflow-y-auto">
+                {groups.map(group => (
+                  <div key={group.label}>
+                    {/* 그룹 헤더 */}
+                    <div className="flex items-center gap-2 px-5 py-2 bg-slate-50 sticky top-0 z-10">
+                      <span className={`text-[10px] font-black px-2 py-0.5 rounded-full border ${group.labelCls}`}>
+                        {group.label}
+                      </span>
+                      <span className="text-xs text-slate-400">
+                        {q ? `${group.items.length}개 검색됨 / ` : ''}{group.count}개
+                      </span>
+                    </div>
+                    {/* 과정 아이템 목록 */}
+                    {group.items.length > 0 ? (
+                      <div className="px-3 py-1">
+                        {group.items.map(({ course, catId }) => {
+                          const isActive =
+                            course.id === activeCourseId ||
+                            (!activeCourseId && defaultActiveId === course.id)
+                          const displayName = course.fileName.replace(/\.(xlsx|xls)$/i, '')
+                          return (
+                            <div
+                              key={course.id}
+                              className={[
+                                'flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-medium cursor-pointer transition-all my-0.5 border',
+                                isActive ? group.activeCls + ' shadow-sm' : group.inactiveCls,
+                              ].join(' ')}
+                              onClick={() => setActiveCourseId(course.id)}
+                            >
+                              <FileText className="w-3 h-3 flex-shrink-0 opacity-60" />
+                              <span className="flex-1 truncate" title={displayName}>{displayName}</span>
+                              <button
+                                onClick={e => { e.stopPropagation(); handleRemoveCourse(catId, course.id) }}
+                                className={`p-0.5 rounded transition-colors shrink-0 ${isActive ? group.deleteCls : 'text-slate-300 hover:text-red-500'}`}
+                                title="과정 삭제"
+                              >
+                                <X className="w-3 h-3" />
+                              </button>
+                            </div>
+                          )
+                        })}
+                      </div>
+                    ) : (
+                      q ? <p className="px-5 py-2 text-xs text-slate-400 italic">검색 결과 없음</p> : null
+                    )}
+                  </div>
+                ))}
+                {filtered.length === 0 && (
+                  <div className="py-8 text-center text-slate-400 text-sm">
+                    &ldquo;{courseSearch}&rdquo;에 해당하는 과정이 없습니다
+                  </div>
+                )}
+              </div>
+
+              <div className="px-5 py-2.5 border-t border-slate-100 bg-slate-50">
+                <p className="text-xs text-slate-400">
+                  강의장 현황은 모든 카테고리·과정 합산 · 수업 날짜 클릭 시 팝업
+                </p>
+              </div>
+            </div>
+          )
+        })()}
+
       </div>
     </div>
   )

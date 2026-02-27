@@ -4,6 +4,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { format } from 'date-fns'
 import Link from 'next/link'
 import CourseSummary from '@/components/dashboard/CourseSummary'
+import WeeklyCalendar from '@/components/dashboard/WeeklyCalendar'
 
 const ALL_ROOMS = ['601', '602', '603', '604', '605', '606', '607', '608', '609', '610']
 
@@ -140,6 +141,9 @@ export default async function DashboardPage() {
         </h3>
         <CourseSummary />
       </div>
+
+      {/* ── 이번 주 강의 일정 (훈련 주간 달력 연동) ── */}
+      <WeeklyCalendar />
 
       {/* 요약 통계 */}
       <div className="grid gap-4 grid-cols-2 sm:grid-cols-3">
