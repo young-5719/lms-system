@@ -24,14 +24,13 @@ interface RoomData {
   courses: RoomCourse[]
 }
 
-const TYPE_STYLE: Record<string, string> = {
-  NATIONAL: 'bg-red-600 text-white',
-  EMPLOYED: 'bg-blue-600 text-white',
-  UNEMPLOYED: 'bg-amber-500 text-white',
-  GENERAL: 'bg-gray-500 text-white',
-  KDT: 'bg-cyan-600 text-white',
-  ASSESSMENT: 'bg-purple-600 text-white',
-  INDUSTRY: 'bg-green-600 text-white',
+function getCourseClass(startTime: string, endTime: string): { label: string; style: string } {
+  const s = (startTime || '').trim()
+  const e = (endTime || '').trim()
+  if (s >= '19:00') return { label: '야간반', style: 'bg-slate-700 text-white' }
+  if (s === '09:00' && e < '15:00') return { label: '오전반', style: 'bg-sky-500 text-white' }
+  if (s >= '10:00' && e < '18:50') return { label: '주중반', style: 'bg-violet-600 text-white' }
+  return { label: '종일반', style: 'bg-emerald-600 text-white' }
 }
 
 // 과정 수에 따른 인쇄 사이즈 클래스 (평일 최대 6개, 주말 최대 2개)
@@ -219,13 +218,13 @@ export default function RoomSchedulePrint({ rooms }: { rooms: RoomData[] }) {
 }
 
 function CourseRow({ course, isWeekendRow, sz }: { course: RoomCourse; isWeekendRow?: boolean; sz: ReturnType<typeof getPrintSize> }) {
-  const typeStyle = TYPE_STYLE[course.type] || TYPE_STYLE.GENERAL
+  const { label, style } = getCourseClass(course.startTime, course.endTime)
 
   return (
     <tr className={course.isUpcoming ? 'bg-yellow-50' : ''}>
       <td className={`border-2 border-gray-800 px-2 py-3 text-center ${sz.cellPy}`}>
-        <span className={`inline-block px-2 py-0.5 rounded text-xs font-bold ${typeStyle} ${sz.cell}`}>
-          {course.typeLabel}
+        <span className={`inline-block px-2 py-0.5 rounded text-xs font-bold ${style} ${sz.cell}`}>
+          {label}
         </span>
       </td>
       <td className={`border-2 border-gray-800 px-3 py-3 ${sz.cellPy}`}>

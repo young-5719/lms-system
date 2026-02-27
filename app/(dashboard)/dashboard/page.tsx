@@ -1,14 +1,9 @@
 import { createClient } from '@/lib/supabase/server'
 import { cookies, headers } from 'next/headers'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { Badge } from '@/components/ui/badge'
 import { format } from 'date-fns'
 import Link from 'next/link'
-
-const TYPE_LABEL: Record<string, string> = {
-  GENERAL: '일반', EMPLOYED: '재직자', UNEMPLOYED: '실업자',
-  NATIONAL: '국기', ASSESSMENT: '과평', KDT: 'KDT', INDUSTRY: '산대특',
-}
+import CourseSummary from '@/components/dashboard/CourseSummary'
 
 const ALL_ROOMS = ['601', '602', '603', '604', '605', '606', '607', '608', '609', '610']
 
@@ -16,16 +11,7 @@ export default async function DashboardPage() {
   const supabase = await createClient()
   const now = new Date()
   const today = format(now, 'yyyy-MM-dd')
-  const dayOfWeek = now.getDay()
-  const isWeekend = dayOfWeek === 0 || dayOfWeek === 6
-
-  // 날짜 계산
-  const in5Date = new Date(now); in5Date.setDate(in5Date.getDate() + 5)
-  const in3Date = new Date(now); in3Date.setDate(in3Date.getDate() + 3)
-  const tomorrowDate = new Date(now); tomorrowDate.setDate(tomorrowDate.getDate() + 1)
-  const in5days = format(in5Date, 'yyyy-MM-dd')
-  const in3days = format(in3Date, 'yyyy-MM-dd')
-  const tomorrow = format(tomorrowDate, 'yyyy-MM-dd')
+  const isWeekend = now.getDay() === 0 || now.getDay() === 6
 
   // 전월 / 전전월 날짜
   const prevMonthFirst = new Date(now.getFullYear(), now.getMonth() - 1, 1)
@@ -39,50 +25,6 @@ export default async function DashboardPage() {
   const prevPrevMonthStart = format(prevPrevMonthFirst, 'yyyy-MM-dd')
   const prevPrevMonthEnd = format(prevPrevMonthLast, 'yyyy-MM-dd')
   const prevPrevMonthLabel = format(prevPrevMonthFirst, 'M월')
-
-  // 기본 집계용 과정 데이터
-  const { data: courses } = await supabase
-    .from('courses')
-    .select('training_id, course_name, type, start_date, end_date, instructor, room_number')
-
-  const allCourses = courses ?? []
-  const totalCourses = allCourses.length
-
-  const ongoingCourses = allCourses.filter(c => c.start_date <= today && c.end_date >= today)
-  const ongoingCount = ongoingCourses.length
-  const ongoingByType: Record<string, number> = {}
-  for (const c of ongoingCourses) {
-    const t = c.type || 'GENERAL'
-    ongoingByType[t] = (ongoingByType[t] || 0) + 1
-  }
-
-  const instructorSet = new Set(
-    allCourses
-      .filter(c => c.start_date >= '2026-01-01' && c.start_date <= '2026-12-31')
-      .map(c => (c.instructor || '').trim())
-      .filter(i => i && i !== '-')
-  )
-  const instructorCount = instructorSet.size
-
-  // 오늘 개강
-  const todayOpening = allCourses.filter(c => c.start_date === today)
-
-  // 5일 이내 개강 예정 (오늘 제외)
-  const openingSoon = allCourses
-    .filter(c => c.start_date >= tomorrow && c.start_date <= in5days)
-    .sort((a, b) => a.start_date.localeCompare(b.start_date))
-
-  // 3일 이내 종강 (오늘 포함)
-  const closingSoon = allCourses
-    .filter(c => c.end_date >= today && c.end_date <= in3days)
-    .sort((a, b) => a.end_date.localeCompare(b.end_date))
-
-  const dDayLabel = (dateStr: string) => {
-    const diff = Math.round((new Date(dateStr).getTime() - new Date(today).getTime()) / 86400000)
-    if (diff === 0) return '오늘'
-    if (diff > 0) return `D-${diff}`
-    return `D+${Math.abs(diff)}`
-  }
 
   // ── 내부 API 호출용 Base URL + 쿠키 ─────────────────────────
   const headersList = await headers()
@@ -108,21 +50,17 @@ export default async function DashboardPage() {
     if (r2.ok) { const d = await r2.json(); prevPrevMonthRate = d.overallRate; prevPrevMonthCompletion = d.avgCompletionRate }
   } catch { /* 조용히 실패 */ }
 
-  // 전전월 대비 증감
   const rateDiff = prevMonthRate != null && prevPrevMonthRate != null ? prevMonthRate - prevPrevMonthRate : null
   const completionDiff = prevMonthCompletion != null && prevPrevMonthCompletion != null ? prevMonthCompletion - prevPrevMonthCompletion : null
   const fmtDiff = (d: number | null) => d == null ? null : (d >= 0 ? `+${d.toFixed(1)}%p` : `${d.toFixed(1)}%p`)
   const diffColor = (d: number | null) => d == null ? '' : d >= 0 ? 'text-green-600' : 'text-red-500'
 
-  // ── 빈강의장 API 호출 (empty-rooms 페이지와 동일한 계산) ────
+  // ── 빈강의장 API 호출 ────────────────────────────────────────
   type SlotInfo = { occupied: boolean; courseName?: string; instructor?: string; type?: string }
   let roomMatrix: Record<string, Record<string, SlotInfo>> = {}
   try {
     const res = await fetch(`${baseUrl}/api/empty-rooms?date=${today}`, fetchOpts)
-    if (res.ok) {
-      const d = await res.json()
-      roomMatrix = d.matrix || {}
-    }
+    if (res.ok) { const d = await res.json(); roomMatrix = d.matrix || {} }
   } catch { /* 조용히 실패 */ }
 
   // ── 이번 달 예상매출 API 호출 ─────────────────────────────
@@ -177,6 +115,13 @@ export default async function DashboardPage() {
     r >= 80 ? 'text-green-600' :
     r >= 50 ? 'text-yellow-600' : 'text-red-600'
 
+  // DB에서 출석부용 진행 중 과정 수 (출석부 카드용)
+  const { count: ongoingCount } = await supabase
+    .from('courses')
+    .select('*', { count: 'exact', head: true })
+    .lte('start_date', today)
+    .gte('end_date', today)
+
   return (
     <div className="space-y-8">
       {/* 헤더 */}
@@ -187,122 +132,17 @@ export default async function DashboardPage() {
         </p>
       </div>
 
-      {/* ── 오늘 개강 배너 ────────────────────────────────── */}
-      {todayOpening.length > 0 && (
-        <div className="rounded-xl border-2 border-emerald-400 bg-emerald-50 p-5">
-          <div className="flex items-center gap-3 mb-3">
-            <span className="text-3xl animate-pulse">🎉</span>
-            <div>
-              <p className="text-xl font-bold text-emerald-800">오늘 개강!</p>
-              <p className="text-sm text-emerald-600">{todayOpening.length}개 과정이 오늘 시작합니다</p>
-            </div>
-          </div>
-          <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
-            {todayOpening.map(c => (
-              <div key={c.training_id} className="bg-white rounded-lg border border-emerald-200 px-4 py-3">
-                <p className="font-semibold text-sm leading-snug">{c.course_name}</p>
-                <div className="flex gap-2 mt-1 text-xs text-emerald-700">
-                  <Badge className="bg-emerald-100 text-emerald-800 hover:bg-emerald-100 text-[10px]">
-                    {TYPE_LABEL[c.type] ?? c.type}
-                  </Badge>
-                  {c.room_number && <span className="self-center">{c.room_number}호</span>}
-                  {c.instructor && <span className="self-center text-gray-500">{c.instructor}</span>}
-                </div>
-                <p className="text-[11px] text-gray-400 mt-1">{c.start_date} ~ {c.end_date}</p>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* ── 개강 예정 / 종강 임박 ──────────────────────────── */}
-      {(openingSoon.length > 0 || closingSoon.length > 0) && (
-        <div className="grid gap-4 md:grid-cols-2">
-
-          {/* 5일 이내 개강 예정 */}
-          <Card className="border-blue-200">
-            <CardHeader className="pb-3">
-              <CardTitle className="text-base flex items-center gap-2">
-                <span>📅</span> 개강 예정
-                <Badge className="ml-1 bg-blue-100 text-blue-700 hover:bg-blue-100">{openingSoon.length}개</Badge>
-              </CardTitle>
-              <CardDescription>오늘부터 5일 이내 개강 과정</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-2">
-              {openingSoon.length === 0 ? (
-                <p className="text-sm text-muted-foreground">해당 없음</p>
-              ) : openingSoon.map(c => (
-                <div key={c.training_id} className="flex items-start gap-3 p-2.5 rounded-lg bg-blue-50 border border-blue-100">
-                  <span className="text-xs font-bold text-blue-600 bg-blue-100 rounded px-2 py-1 whitespace-nowrap shrink-0">
-                    {dDayLabel(c.start_date)}
-                  </span>
-                  <div className="min-w-0">
-                    <p className="text-sm font-medium leading-snug">{c.course_name}</p>
-                    <p className="text-xs text-muted-foreground mt-0.5">
-                      {c.start_date} · {TYPE_LABEL[c.type] ?? c.type}
-                      {c.instructor ? ` · ${c.instructor}` : ''}
-                    </p>
-                  </div>
-                </div>
-              ))}
-            </CardContent>
-          </Card>
-
-          {/* 3일 이내 종강 임박 */}
-          <Card className="border-red-200">
-            <CardHeader className="pb-3">
-              <CardTitle className="text-base flex items-center gap-2">
-                <span>⏰</span> 종강 임박
-                <Badge className="ml-1 bg-red-100 text-red-700 hover:bg-red-100">{closingSoon.length}개</Badge>
-              </CardTitle>
-              <CardDescription>오늘부터 3일 이내 종강 과정</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-2">
-              {closingSoon.length === 0 ? (
-                <p className="text-sm text-muted-foreground">해당 없음</p>
-              ) : closingSoon.map(c => {
-                const isToday = c.end_date === today
-                return (
-                  <div key={c.training_id} className={`flex items-start gap-3 p-2.5 rounded-lg border ${isToday ? 'bg-red-50 border-red-200' : 'bg-orange-50 border-orange-100'}`}>
-                    <span className={`text-xs font-bold rounded px-2 py-1 whitespace-nowrap shrink-0 ${isToday ? 'bg-red-200 text-red-700' : 'bg-orange-100 text-orange-600'}`}>
-                      {isToday ? '오늘종강' : dDayLabel(c.end_date)}
-                    </span>
-                    <div className="min-w-0">
-                      <p className="text-sm font-medium leading-snug">{c.course_name}</p>
-                      <p className="text-xs text-muted-foreground mt-0.5">
-                        종강 {c.end_date} · {TYPE_LABEL[c.type] ?? c.type}
-                        {c.instructor ? ` · ${c.instructor}` : ''}
-                      </p>
-                    </div>
-                  </div>
-                )
-              })}
-            </CardContent>
-          </Card>
-
-        </div>
-      )}
+      {/* ── 엑셀 기반 개강 / 종강 현황 (훈련 주간 달력 연동) ── */}
+      <div className="space-y-3">
+        <h3 className="text-base font-semibold text-muted-foreground flex items-center gap-2 border-b pb-2">
+          <span>📆</span> 개강·종강 현황
+          <span className="text-xs font-normal text-slate-400 ml-1">훈련 주간 달력 업로드 기준</span>
+        </h3>
+        <CourseSummary />
+      </div>
 
       {/* 요약 통계 */}
-      <div className="grid gap-4 grid-cols-2 sm:grid-cols-3 md:grid-cols-5">
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">전체 과정</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-3xl font-bold">{totalCourses}</div>
-            <p className="text-xs text-muted-foreground mt-1">등록된 총 과정</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">현재 진행 중</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-3xl font-bold text-blue-600">{ongoingCount}</div>
-            <p className="text-xs text-muted-foreground mt-1">오늘 기준 진행 과정</p>
-          </CardContent>
-        </Card>
+      <div className="grid gap-4 grid-cols-2 sm:grid-cols-3">
         <Card>
           <CardHeader className="pb-2">
             <CardTitle className="text-sm font-medium text-muted-foreground">{prevMonthLabel} 모집률</CardTitle>
@@ -372,20 +212,7 @@ export default async function DashboardPage() {
                 </div>
               </CardHeader>
               <CardContent>
-                <div className="flex items-baseline gap-1">
-                  <span className="text-2xl font-bold">{totalCourses}</span>
-                  <span className="text-sm text-muted-foreground">개 과정 등록됨</span>
-                </div>
-                <div className="flex flex-wrap gap-1.5 mt-2">
-                  {Object.entries(ongoingByType).map(([type, count]) => (
-                    <Badge key={type} variant="secondary" className="text-xs">
-                      {TYPE_LABEL[type] || type} {count}
-                    </Badge>
-                  ))}
-                  {ongoingCount > 0 && (
-                    <span className="text-xs text-muted-foreground self-center">진행 중 {ongoingCount}개</span>
-                  )}
-                </div>
+                <p className="text-xs text-muted-foreground">과정 정보를 조회하고 관리합니다</p>
               </CardContent>
             </Card>
           </Link>
@@ -406,7 +233,7 @@ export default async function DashboardPage() {
               </CardHeader>
               <CardContent>
                 <div className="flex items-baseline gap-1">
-                  <span className="text-2xl font-bold text-violet-600">{ongoingCount}</span>
+                  <span className="text-2xl font-bold text-violet-600">{ongoingCount ?? 0}</span>
                   <span className="text-sm text-muted-foreground">개 과정 진행 중</span>
                 </div>
                 <p className="text-xs text-muted-foreground mt-2">과정을 선택하여 수강생 출석부를 확인하세요</p>
@@ -424,39 +251,24 @@ export default async function DashboardPage() {
         </h3>
         <div className="grid gap-4 md:grid-cols-2">
 
-          <Link href="/empty-rooms" className="group">
-            <Card className="h-full hover:shadow-md transition-all border-2 hover:border-green-200 cursor-pointer">
+          <Link href="/training-calendar" className="group">
+            <Card className="h-full hover:shadow-md transition-all border-2 hover:border-blue-200 cursor-pointer">
               <CardHeader className="pb-3">
                 <div className="flex items-start justify-between">
                   <div className="flex items-center gap-3">
-                    <div className="w-11 h-11 rounded-xl bg-green-100 flex items-center justify-center text-2xl flex-shrink-0">🏫</div>
+                    <div className="w-11 h-11 rounded-xl bg-blue-100 flex items-center justify-center text-2xl flex-shrink-0">📅</div>
                     <div>
-                      <CardTitle className="text-base group-hover:text-green-600 transition-colors">빈 강의장</CardTitle>
-                      <CardDescription className="text-xs mt-0.5">시간대별 빈 강의장 현황 조회</CardDescription>
+                      <CardTitle className="text-base group-hover:text-blue-600 transition-colors">훈련 주간 달력</CardTitle>
+                      <CardDescription className="text-xs mt-0.5">엑셀 시간표 업로드 · 날짜별 강의장 현황</CardDescription>
                     </div>
                   </div>
-                  <span className="text-muted-foreground group-hover:text-green-500 transition-colors text-lg">→</span>
+                  <span className="text-muted-foreground group-hover:text-blue-500 transition-colors text-lg">→</span>
                 </div>
               </CardHeader>
               <CardContent>
-                <div className="flex items-baseline gap-1">
-                  <span className="text-2xl font-bold text-green-600">{emptyRooms.length}</span>
-                  <span className="text-sm text-muted-foreground">개 사용 가능 (19시 이후)</span>
-                </div>
-                <div className="flex flex-wrap gap-1 mt-2">
-                  {ALL_ROOMS.map(room => (
-                    <span
-                      key={room}
-                      className={`text-xs px-2 py-0.5 rounded font-medium ${
-                        eveningOccupied.has(room)
-                          ? 'bg-red-100 text-red-600'
-                          : 'bg-green-100 text-green-700'
-                      }`}
-                    >
-                      {room}
-                    </span>
-                  ))}
-                </div>
+                <p className="text-xs text-muted-foreground">
+                  폴더·파일 업로드로 과정별 시간표를 관리하고<br />날짜 클릭으로 강의장 현황을 확인하세요
+                </p>
               </CardContent>
             </Card>
           </Link>
@@ -540,31 +352,7 @@ export default async function DashboardPage() {
         <h3 className="text-base font-semibold text-muted-foreground flex items-center gap-2 border-b pb-2">
           <span>📊</span> 분석 & 통계
         </h3>
-        <div className="grid gap-4 md:grid-cols-3">
-
-          <Link href="/instructors" className="group">
-            <Card className="h-full hover:shadow-md transition-all border-2 hover:border-orange-200 cursor-pointer">
-              <CardHeader className="pb-3">
-                <div className="flex items-start justify-between">
-                  <div className="flex items-center gap-3">
-                    <div className="w-11 h-11 rounded-xl bg-orange-100 flex items-center justify-center text-2xl flex-shrink-0">👨‍🏫</div>
-                    <div>
-                      <CardTitle className="text-base group-hover:text-orange-600 transition-colors">강사별 수업시간</CardTitle>
-                      <CardDescription className="text-xs mt-0.5">월별 수업시간 집계 및 엑셀 내보내기</CardDescription>
-                    </div>
-                  </div>
-                  <span className="text-muted-foreground group-hover:text-orange-500 transition-colors text-lg">→</span>
-                </div>
-              </CardHeader>
-              <CardContent>
-                <div className="flex items-baseline gap-1">
-                  <span className="text-2xl font-bold text-orange-600">{instructorCount}</span>
-                  <span className="text-sm text-muted-foreground">명 강사 (2026년)</span>
-                </div>
-                <p className="text-xs text-muted-foreground mt-2">일정변경·취업특강 반영 집계</p>
-              </CardContent>
-            </Card>
-          </Link>
+        <div className="grid gap-4 md:grid-cols-2">
 
           <Link href="/statistics" className="group">
             <Card className="h-full hover:shadow-md transition-all border-2 hover:border-indigo-200 cursor-pointer">
@@ -591,7 +379,6 @@ export default async function DashboardPage() {
                     <p className="text-xs text-muted-foreground">{prevMonthLabel} 수료율</p>
                   </div>
                 </div>
-                <p className="text-xs text-muted-foreground mt-2">개강일 기준 조회 기간 설정 가능</p>
               </CardContent>
             </Card>
           </Link>
@@ -630,8 +417,8 @@ export default async function DashboardPage() {
               &nbsp;· 사용 중 {usedRooms.length}개 / 빈 강의실 {emptyRooms.length}개
             </CardDescription>
           </div>
-          <Link href="/empty-rooms">
-            <span className="text-sm text-blue-500 hover:text-blue-700 hover:underline">상세보기 →</span>
+          <Link href="/room-schedule">
+            <span className="text-sm text-blue-500 hover:text-blue-700 hover:underline">강의장 시간표 →</span>
           </Link>
         </CardHeader>
         <CardContent className="space-y-5">
@@ -660,10 +447,9 @@ export default async function DashboardPage() {
                       </div>
                       <div className="min-w-0 flex-1">
                         <p className="text-sm font-medium truncate">{info.courseName}</p>
-                        <div className="flex gap-2 text-xs text-gray-500 mt-0.5">
-                          <span>{TYPE_LABEL[info.type || ''] || info.type}</span>
-                          {info.instructor && <><span>|</span><span>{info.instructor}</span></>}
-                        </div>
+                        {info.instructor && (
+                          <p className="text-xs text-gray-500 mt-0.5">{info.instructor}</p>
+                        )}
                       </div>
                     </div>
                   )

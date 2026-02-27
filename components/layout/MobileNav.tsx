@@ -4,8 +4,8 @@ import { useState } from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import {
-  Menu, X, LayoutDashboard, BookOpen, ClipboardList, DoorOpen,
-  CalendarDays, Users, BarChart3, Search,
+  Menu, X, LayoutDashboard, BookOpen, ClipboardList,
+  CalendarDays, BarChart3, Search,
   FileText, TrendingUp, UserPlus, ChevronRight, Briefcase,
 } from 'lucide-react'
 
@@ -27,14 +27,12 @@ const NAV_SECTIONS = [
   {
     label: '강의장',
     items: [
-      { href: '/empty-rooms', label: '빈 강의장', icon: DoorOpen },
       { href: '/room-schedule', label: '강의장 시간표', icon: CalendarDays },
     ],
   },
   {
     label: '분석',
     items: [
-      { href: '/instructors', label: '강사별 수업시간', icon: Users },
       { href: '/statistics', label: '통계', icon: BarChart3 },
       { href: '/employment', label: '취업률 현황', icon: Briefcase },
       { href: '/revenue', label: '국비지원 예상매출', icon: TrendingUp },
