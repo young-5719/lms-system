@@ -6,7 +6,7 @@ import {
   LayoutDashboard, BookOpen, ClipboardList,
   CalendarDays, BarChart3, Search,
   FileText, TrendingUp, UserPlus, ChevronRight, Briefcase,
-  Calendar, CheckSquare,
+  Calendar, CheckSquare, Clock,
 } from 'lucide-react'
 
 const NAV_SECTIONS = [
@@ -43,6 +43,7 @@ const NAV_SECTIONS = [
     label: '도구',
     items: [
       { href: '/training-calendar', label: '훈련 주간 달력', icon: Calendar },
+      { href: '/instructor-hours', label: '강사 월별 수업시간', icon: Clock },
       { href: '/attendance-calc', label: '과평 출석 계산기', icon: CheckSquare },
     ],
   },

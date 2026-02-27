@@ -1037,14 +1037,82 @@ export default function TrainingCalendarPage() {
 
             {/* ── 섹션 1: 과정별 세부 일정 ── */}
             {perCourseData.length > 0 ? (
-              <section>
-                <h3 className="text-sm font-black text-slate-500 uppercase tracking-widest mb-3 flex items-center gap-2">
+              <section className="space-y-5">
+                <h3 className="text-sm font-black text-slate-500 uppercase tracking-widest flex items-center gap-2">
                   <BookOpen className="w-4 h-4" /> 과정별 세부 일정
                 </h3>
-                <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-                  {perCourseData.map(entry => {
-                    const sc = getSubjectColor(entry.subject)
-                    return (
+
+                {/* 실업자 계열 */}
+                {perCourseData.filter(e => e.isUnemployed).length > 0 && (
+                  <div>
+                    <div className="flex items-center gap-3 mb-3">
+                      <span className="text-xs font-black text-emerald-700 bg-emerald-50 border border-emerald-200 px-3 py-1 rounded-full">
+                        실업자 계열
+                      </span>
+                      <div className="flex-1 border-t border-emerald-200" />
+                    </div>
+                    <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+                      {perCourseData.filter(e => e.isUnemployed).map(entry => {
+                        const sc = getSubjectColor(entry.subject)
+                        return (
+                          <div
+                            key={entry.id}
+                            className={`rounded-xl border-2 p-4 flex flex-col gap-3 ${sc.border} bg-white`}
+                          >
+                            <div className="flex items-start justify-between gap-2">
+                              <p className={`font-black text-[15px] leading-snug ${sc.text}`}>{entry.subject}</p>
+                              <span className={`shrink-0 text-[10px] font-bold px-2 py-0.5 rounded-full border ${sc.bg} ${sc.border} ${sc.text}`}>{entry.catName}</span>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <Clock className="w-4 h-4 text-slate-400 shrink-0" />
+                              <span className="text-sm font-black text-slate-700">{entry.timeRange}</span>
+                            </div>
+                            {entry.subjects.length > 0 && (
+                              <div className="space-y-1.5">
+                                {entry.subjects.map((s, i) => (
+                                  <div key={i} className="flex items-start gap-2">
+                                    <span className={`mt-1 w-1.5 h-1.5 rounded-full shrink-0 ${sc.text.replace('text-', 'bg-')}`} />
+                                    <span className="text-sm text-slate-700 leading-snug">{s}</span>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                            {entry.instructors.length > 0 && (
+                              <div className="flex items-center gap-1.5 pt-1 border-t border-slate-100">
+                                <User className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                                <span className="text-xs text-slate-500">{entry.instructors.map(maskName).join(' · ')}</span>
+                              </div>
+                            )}
+                            {entry.notices.length > 0 && (
+                              <div className="pt-2 border-t-2 border-red-100 space-y-1">
+                                {entry.notices.map((n, i) => (
+                                  <div key={i} className="flex items-start gap-1.5">
+                                    <AlertTriangle className="w-3.5 h-3.5 text-red-500 shrink-0 mt-0.5" />
+                                    <span className="text-sm font-black text-red-600 leading-snug">{n}</span>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        )
+                      })}
+                    </div>
+                  </div>
+                )}
+
+                {/* 근로자 계열 */}
+                {perCourseData.filter(e => !e.isUnemployed).length > 0 && (
+                  <div>
+                    <div className="flex items-center gap-3 mb-3">
+                      <span className="text-xs font-black text-blue-700 bg-blue-50 border border-blue-200 px-3 py-1 rounded-full">
+                        근로자 계열
+                      </span>
+                      <div className="flex-1 border-t border-blue-200" />
+                    </div>
+                    <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+                      {perCourseData.filter(e => !e.isUnemployed).map(entry => {
+                        const sc = getSubjectColor(entry.subject)
+                        return (
                       <div
                         key={entry.id}
                         className={`rounded-xl border-2 p-4 flex flex-col gap-3 ${sc.border} bg-white`}
@@ -1101,7 +1169,10 @@ export default function TrainingCalendarPage() {
                       </div>
                     )
                   })}
-                </div>
+                    </div>
+                  </div>
+                )}
+
               </section>
             ) : (
               <div className="py-6 text-center text-slate-400 text-sm border border-dashed border-slate-200 rounded-xl">
