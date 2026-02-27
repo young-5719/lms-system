@@ -4,7 +4,8 @@ import React, { useState, useRef, useEffect } from 'react'
 import * as XLSX from 'xlsx'
 import {
   Calendar, Upload, Clock, User, MapPin, BookOpen,
-  FileText, Bell, Table2, X, LayoutGrid, ChevronDown, FolderOpen
+  FileText, Bell, Table2, X, LayoutGrid, ChevronDown, FolderOpen,
+  ChevronLeft, ChevronRight, AlertTriangle
 } from 'lucide-react'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -388,6 +389,7 @@ interface MatrixCell {
   occupied: boolean
   subject?: string     // parsed from fileName (e.g. "(멀티미디어)디지털광고제작")
   fileName?: string    // full name without extension
+  courseName?: string  // 교과목 from Excel column
   instructor?: string
 }
 
@@ -397,6 +399,7 @@ interface CellRenderInfo {
   occupied: boolean
   subject?: string
   fileName?: string
+  courseName?: string  // 교과목 from Excel column
   instructor?: string
 }
 
@@ -440,6 +443,7 @@ function computeCellGrid(
       grid[room][slot.start] = {
         skip: false, rowSpan: span, occupied: true,
         subject: info.subject, instructor: info.instructor, fileName: info.fileName,
+        courseName: info.courseName,
       }
       for (let j = 1; j < span; j++) {
         grid[room][usedSlots[i + j].start] = { skip: true, rowSpan: 1, occupied: true }
@@ -520,6 +524,24 @@ function deserializeCategories(data: SerializedCategory[]): Category[] {
   }))
 }
 
+// ─── Month grid builder (for any arbitrary month) ────────────────────────────
+
+function buildMonthGrid(year: number, month: number): (Date | null)[][] {
+  const rows: (Date | null)[][] = []
+  const firstOfMonth = new Date(year, month, 1)
+  const lastOfMonth = new Date(year, month + 1, 0)
+  const day = new Date(firstOfMonth)
+  day.setDate(1 - firstOfMonth.getDay())
+  while (true) {
+    if (day.getDay() === 0) rows.push([])
+    const inMonth = day.getMonth() === month && day.getFullYear() === year
+    rows[rows.length - 1].push(inMonth ? new Date(day) : null)
+    day.setDate(day.getDate() + 1)
+    if (day > lastOfMonth && day.getDay() === 0) break
+  }
+  return rows
+}
+
 // ─── Course status helpers ────────────────────────────────────────────────────
 
 function isCourseFinished(course: CourseEntry): boolean {
@@ -541,6 +563,10 @@ export default function TrainingCalendarPage() {
   const [isDragging, setIsDragging] = useState(false)
   const [isGenerating, setIsGenerating] = useState(false)
   const [isInitialized, setIsInitialized] = useState(false)
+  const [currentViewMonth, setCurrentViewMonth] = useState<{ year: number; month: number }>(() => {
+    const today = new Date()
+    return { year: today.getFullYear(), month: today.getMonth() }
+  })
 
   const calendarRef = useRef<HTMLDivElement>(null)
 
@@ -818,7 +844,7 @@ export default function TrainingCalendarPage() {
           s => s.room === room && s.start < slot.end && s.end > slot.start
         )
         matrix[room][slot.start] = session
-          ? { occupied: true, subject: session.subject, instructor: session.instructor, fileName: session.fileName }
+          ? { occupied: true, subject: session.subject, courseName: session.courseName, instructor: session.instructor, fileName: session.fileName }
           : { occupied: false }
       }
     }
@@ -835,187 +861,101 @@ export default function TrainingCalendarPage() {
     return { rooms, matrix, usedSlots, hasData }
   }
 
-  // ── Calendar rendering ────────────────────────────────────────────────────────
-  const renderDay = (day: Date | null) => {
-    if (!day) return <div className="bg-slate-50/30 border-r border-slate-200 min-h-[160px]" />
+  // ── Unified day cell (shows all courses for a date) ──────────────────────────
+  const renderUnifiedDay = (day: Date | null) => {
+    if (!day) return <div className="bg-slate-50/30 border-r border-slate-200 min-h-[110px]" />
 
     const dateStr = getLocalDateString(day)
-    const training = activeCourse?.data[dateStr]
-    const dayAlerts = activeCourse?.alerts[dateStr] || []
-    const isDiscretionary = training?.isDiscretionary
+    const todayStr = getLocalDateString(new Date())
+    const isToday = dateStr === todayStr
     const isSelected = modalDate === dateStr
+
+    // Gather all courses with data on this date across all categories
+    const entries = categories.flatMap(cat =>
+      cat.courses
+        .filter(c => c.data[dateStr])
+        .map(c => ({
+          course: c,
+          dayData: c.data[dateStr],
+          alerts: c.alerts[dateStr] ?? [],
+          subject: parseCourseFileName(c.fileName).subject,
+        }))
+    )
+
+    const hasData = entries.length > 0
+    const hasAlerts = entries.some(e => e.alerts.length > 0)
+    const isDiscretionary = entries.some(e => e.dayData.isDiscretionary)
 
     return (
       <div
-        key={dateStr}
-        onClick={() => training && setModalDate(dateStr)}
+        onClick={() => hasData && setModalDate(dateStr)}
         className={[
-          'p-3 flex flex-col min-h-[220px] border-r border-slate-200 last:border-r-0 transition-colors h-full',
-          !training ? 'bg-slate-50' : day.getDay() === 0 ? 'bg-rose-50/10' : 'bg-white',
-          training ? 'cursor-pointer hover:bg-blue-50/30' : '',
-          isSelected ? 'ring-2 ring-inset ring-blue-500 bg-blue-50/20' : '',
+          'p-2 flex flex-col min-h-[110px] border-r border-slate-200 last:border-r-0 transition-colors',
+          !hasData
+            ? 'bg-slate-50'
+            : day.getDay() === 0
+            ? 'bg-rose-50/20'
+            : isToday
+            ? 'bg-blue-50/40'
+            : 'bg-white',
+          hasData ? 'cursor-pointer hover:bg-blue-50/50' : '',
+          isSelected ? 'ring-2 ring-inset ring-blue-500' : '',
         ].join(' ')}
       >
-        <div className="flex justify-between items-center mb-2">
+        {/* Date number + badges */}
+        <div className="flex items-start justify-between mb-1.5">
           <span
             className={[
-              'text-sm font-black w-7 h-7 flex items-center justify-center rounded-lg',
-              day.getDay() === 0 ? 'text-rose-500' : day.getDay() === 6 ? 'text-blue-600' : 'text-slate-700',
-              !training ? 'opacity-40' : '',
+              'text-sm font-black w-7 h-7 flex items-center justify-center rounded-lg shrink-0',
+              isToday
+                ? 'bg-blue-600 text-white'
+                : day.getDay() === 0
+                ? 'text-rose-500'
+                : day.getDay() === 6
+                ? 'text-blue-600'
+                : 'text-slate-700',
+              !hasData ? 'opacity-30' : '',
             ].join(' ')}
           >
             {day.getDate()}
           </span>
-          {isDiscretionary && (
-            <div className="text-[9px] font-black text-orange-600 bg-orange-50 px-1.5 py-0.5 rounded border border-orange-100">
-              ✨ 재량
-            </div>
-          )}
+          <div className="flex gap-1 flex-wrap justify-end">
+            {isDiscretionary && (
+              <span className="text-[8px] font-black text-orange-600 bg-orange-50 px-1 py-0.5 rounded border border-orange-100 leading-none">
+                재량
+              </span>
+            )}
+            {hasAlerts && (
+              <span className="text-[8px] font-black text-red-600 bg-red-50 px-1 py-0.5 rounded border border-red-100 leading-none">
+                !
+              </span>
+            )}
+          </div>
         </div>
 
-        {training ? (
-          <>
-            <div className="flex flex-col gap-2 flex-grow">
-              <div className="bg-blue-600 text-white p-2 rounded-lg shadow-sm text-[11px] font-bold flex items-center gap-1.5">
-                <Clock className="w-3 h-3" /> {training.minStart} ~ {training.maxEnd}
-              </div>
-              <div className="text-[10px] text-amber-600 font-bold px-1 mb-1">
-                🍴 {training.lunchStart}~{training.lunchEnd}
-              </div>
-              <div className="space-y-1.5">
-                {Array.from(training.subjects).map((s, i) => (
-                  <div key={i} className="flex flex-col gap-0.5">
-                    <div className="text-[11px] font-black text-slate-800 flex items-start gap-1">
-                      <BookOpen className="w-3 h-3 text-blue-500 mt-0.5 shrink-0" />
-                      <span className="line-clamp-2 leading-tight">{s}</span>
-                    </div>
-                    <div className="text-[9px] text-slate-400 pl-4 italic truncate">
-                      NCS:{' '}
-                      {Array.from(training.ncsUnits)[i] ||
-                        Array.from(training.ncsUnits)[0] ||
-                        '-'}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            {dayAlerts.length > 0 && (
-              <div className="my-2 space-y-1.5">
-                {dayAlerts.map((a, i) => (
-                  <div
-                    key={i}
-                    className="text-[10px] font-black px-2 py-1 rounded leading-tight flex items-center gap-1.5 bg-rose-50 text-rose-600 border border-rose-100"
-                  >
-                    {a}
-                  </div>
-                ))}
-              </div>
-            )}
-
-            <div className="mt-auto pt-2 border-t border-slate-100 flex flex-col gap-1">
-              {Array.from(training.rooms)
-                .filter(r => r !== '-' && r !== '')
-                .map((r, i) => (
-                  <div
-                    key={i}
-                    className="text-[9px] font-bold text-emerald-600 bg-emerald-50 px-1.5 py-0.5 rounded flex items-center gap-1 border border-emerald-100"
-                  >
-                    <MapPin className="w-2.5 h-2.5" /> {r}
-                  </div>
-                ))}
-              {Array.from(training.instructors).map((inst, i) => (
+        {/* Course chips */}
+        {hasData ? (
+          <div className="space-y-1 flex-1">
+            {entries.map(entry => {
+              const sc = getSubjectColor(entry.subject)
+              return (
                 <div
-                  key={i}
-                  className={`text-[9px] font-bold px-1.5 py-0.5 rounded flex items-center gap-1 border ${getInstructorColor(inst)}`}
+                  key={entry.course.id}
+                  className={`rounded px-1.5 py-1 border ${sc.bg} ${sc.border}`}
                 >
-                  <User className="w-2.5 h-2.5 opacity-70" /> {maskName(inst)}
+                  <div className={`text-[10px] font-black truncate leading-tight ${sc.text}`}>
+                    {entry.subject}
+                  </div>
+                  <div className="text-[9px] text-slate-500 leading-none mt-0.5">
+                    {entry.dayData.minStart}~{entry.dayData.maxEnd}
+                  </div>
                 </div>
-              ))}
-            </div>
-          </>
+              )
+            })}
+          </div>
         ) : (
-          <div className="flex-grow flex items-center justify-center opacity-20">
-            <span className="text-[10px] font-bold text-slate-300 uppercase tracking-widest">
-              No Class
-            </span>
-          </div>
-        )}
-      </div>
-    )
-  }
-
-  // ── Month rendering (collapsible) ────────────────────────────────────────────
-  const renderMonth = (monthCal: MonthCalendar) => {
-    const courseId = activeCourse?.id ?? ''
-    const monthKey = `${courseId}-${monthCal.key}`
-    const isExpanded = expandedMonths.has(monthKey)
-    const past = isMonthPast(monthCal.year, monthCal.month)
-    const current = isMonthCurrent(monthCal.year, monthCal.month)
-
-    const headerBg = past
-      ? 'bg-slate-500 hover:bg-slate-600'
-      : current
-      ? 'bg-blue-700 hover:bg-blue-800'
-      : 'bg-slate-900 hover:bg-slate-800'
-
-    return (
-      <div key={monthCal.key} className="pdf-page-break mb-3 last:mb-0">
-        {/* Collapsible header */}
-        <div
-          onClick={() => toggleMonth(monthKey)}
-          className={[
-            'flex items-center justify-between px-6 py-4 text-white cursor-pointer select-none transition-colors',
-            isExpanded ? 'rounded-t-[1.5rem]' : 'rounded-[1.5rem]',
-            headerBg,
-          ].join(' ')}
-        >
-          <h2 className="text-xl font-black flex items-center gap-3">
-            <Calendar className="w-6 h-6 text-blue-300 flex-shrink-0" />
-            <span>{monthCal.year}년 {monthCal.month + 1}월</span>
-            {current && (
-              <span className="text-xs bg-blue-500 text-white px-2 py-0.5 rounded-full font-bold">
-                이번 달
-              </span>
-            )}
-            {past && (
-              <span className="text-xs bg-slate-400 text-white px-2 py-0.5 rounded-full font-normal">
-                지난 달
-              </span>
-            )}
-          </h2>
-          <div className="flex items-center gap-3 flex-shrink-0">
-            <span className="text-xs text-slate-400 tracking-widest uppercase hidden md:block">
-              Monthly Training Schedule
-            </span>
-            <ChevronDown
-              className={`w-5 h-5 text-slate-300 transition-transform duration-200 ${isExpanded ? 'rotate-180' : ''}`}
-            />
-          </div>
-        </div>
-
-        {/* Calendar grid */}
-        {isExpanded && (
-          <div className="bg-white rounded-b-[1.5rem] shadow-xl overflow-hidden border-x border-b border-slate-200">
-            <div className="grid grid-cols-7 bg-slate-100 border-b border-slate-200">
-              {['일', '월', '화', '수', '목', '금', '토'].map((d, i) => (
-                <div
-                  key={d}
-                  className={`py-2 text-center text-[10px] font-black tracking-widest ${
-                    i === 0 ? 'text-rose-500' : i === 6 ? 'text-blue-600' : 'text-slate-500'
-                  }`}
-                >
-                  {d}
-                </div>
-              ))}
-            </div>
-            {monthCal.calendarRows.map((row, ri) => (
-              <div key={ri} className="grid grid-cols-7 border-b border-slate-100 last:border-b-0">
-                {row.map((day, ci) => (
-                  <React.Fragment key={ci}>{renderDay(day)}</React.Fragment>
-                ))}
-              </div>
-            ))}
+          <div className="flex-1 flex items-center justify-center">
+            <span className="text-[9px] text-slate-200 font-bold">—</span>
           </div>
         )}
       </div>
@@ -1031,6 +971,33 @@ export default function TrainingCalendarPage() {
     const [, mStr, dStr] = modalDate.split('-')
     const dayName = WEEKDAYS[dateObj.getDay()]
 
+    // Collect all special notices for this date from every course
+    const notices: string[] = []
+    categories.forEach(cat => {
+      cat.courses.forEach(c => {
+        const dayData = c.data[modalDate]
+        const { subject } = parseCourseFileName(c.fileName)
+        const label = subject || c.fileName.replace(/\.(xlsx|xls)$/i, '')
+        const dateAlerts = c.alerts[modalDate] ?? []
+        dateAlerts.forEach(a => {
+          if (
+            a.includes('강사 변경') ||
+            a.includes('NCS 시작') ||
+            a.includes('NCS 종료') ||
+            a.includes('개강일') ||
+            a.includes('종강일') ||
+            a.includes('[시작]') ||
+            a.includes('[종료]')
+          ) {
+            notices.push(`[${label}] ${a}`)
+          }
+        })
+        if (dayData?.isDiscretionary) {
+          notices.push(`[${label}] 재량교과`)
+        }
+      })
+    })
+
     return (
       <div
         className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4"
@@ -1040,6 +1007,7 @@ export default function TrainingCalendarPage() {
           className="bg-white rounded-2xl shadow-2xl w-full max-w-5xl max-h-[85vh] flex flex-col"
           onClick={e => e.stopPropagation()}
         >
+          {/* Header */}
           <div className="flex items-center justify-between px-6 py-4 bg-slate-900 text-white rounded-t-2xl flex-shrink-0">
             <h2 className="text-lg font-black flex items-center gap-3">
               <LayoutGrid className="w-5 h-5 text-blue-400" />
@@ -1058,6 +1026,26 @@ export default function TrainingCalendarPage() {
             </div>
           </div>
 
+          {/* Special notices */}
+          {notices.length > 0 && (
+            <div className="px-5 pt-4 pb-2 border-b border-slate-100 flex-shrink-0">
+              <div className="flex items-start gap-2 flex-wrap">
+                <div className="flex items-center gap-1.5 shrink-0 mt-0.5">
+                  <AlertTriangle className="w-4 h-4 text-red-500" />
+                  <span className="text-xs font-black text-red-600">특이사항</span>
+                </div>
+                {notices.map((n, i) => (
+                  <span
+                    key={i}
+                    className="text-xs font-black text-red-600 bg-red-50 border border-red-200 px-2 py-1 rounded-lg leading-tight"
+                  >
+                    {n}
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
+
           <div className="overflow-auto flex-1 p-5">
             {!hasData && (
               <div className="mb-3 px-4 py-2 bg-slate-50 rounded-xl text-center text-sm text-slate-400 border border-slate-200">
@@ -1066,100 +1054,105 @@ export default function TrainingCalendarPage() {
             )}
             <>
               <div className="overflow-x-auto">
-                  <table className="w-full border-collapse text-sm min-w-[500px]">
-                    <thead>
-                      <tr>
-                        <th className="p-2 border text-xs font-semibold text-gray-600 w-[110px] bg-gray-50 whitespace-nowrap">
-                          시간
+                <table className="w-full border-collapse text-sm min-w-[500px]">
+                  <thead>
+                    <tr>
+                      <th className="p-2 border text-xs font-semibold text-gray-600 w-[110px] bg-gray-50 whitespace-nowrap">
+                        시간
+                      </th>
+                      {rooms.map(room => (
+                        <th key={room} className="p-2 border text-center text-sm font-bold min-w-[120px] bg-gray-50">
+                          {room}
                         </th>
-                        {rooms.map(room => (
-                          <th key={room} className="p-2 border text-center text-sm font-bold min-w-[100px] bg-gray-50">
-                            {room}
-                          </th>
-                        ))}
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {usedSlots.map(slot => {
-                        const timeColors = getTimeColor(slot.start)
-                        return (
-                          <tr key={slot.start}>
-                            <td className={`p-2 border text-xs font-medium whitespace-nowrap ${timeColors.bg} ${timeColors.text}`}>
-                              {slot.label}
-                            </td>
-                            {rooms.map(room => {
-                              const cell = cellGrid[room]?.[slot.start]
-                              if (!cell || cell.skip) return null
-                              if (!cell.occupied) {
-                                return (
-                                  <td key={room} className="p-2 border text-center bg-white border-green-200">
-                                    <span className="text-green-500 text-xs">-</span>
-                                  </td>
-                                )
-                              }
-                              const sc = getSubjectColor(cell.subject ?? '')
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {usedSlots.map(slot => {
+                      const timeColors = getTimeColor(slot.start)
+                      return (
+                        <tr key={slot.start}>
+                          <td className={`p-2 border text-xs font-medium whitespace-nowrap ${timeColors.bg} ${timeColors.text}`}>
+                            {slot.label}
+                          </td>
+                          {rooms.map(room => {
+                            const cell = cellGrid[room]?.[slot.start]
+                            if (!cell || cell.skip) return null
+                            if (!cell.occupied) {
                               return (
-                                <td
-                                  key={room}
-                                  rowSpan={cell.rowSpan}
-                                  className={`p-1.5 border ${sc.bg} ${sc.border} align-top`}
-                                  title={`${cell.subject}\n${cell.fileName}\n강사: ${cell.instructor || '-'}`}
-                                >
-                                  <div className="text-[11px] leading-tight">
-                                    <div className={`font-black text-[12px] line-clamp-3 max-w-[130px] ${sc.text}`}>
-                                      {cell.subject || '-'}
-                                    </div>
-                                    {cell.fileName && (
-                                      <div className="text-[10px] text-gray-500 mt-0.5 line-clamp-2">
-                                        {cell.fileName}
-                                      </div>
-                                    )}
-                                    {cell.instructor && (
-                                      <div className="text-[10px] text-gray-400 mt-0.5 truncate">
-                                        {maskName(cell.instructor)}
-                                      </div>
-                                    )}
-                                  </div>
+                                <td key={room} className="p-2 border text-center bg-white border-green-200">
+                                  <span className="text-green-400 text-xs font-bold">빈 강의장</span>
                                 </td>
                               )
-                            })}
-                          </tr>
-                        )
-                      })}
-                    </tbody>
-                  </table>
-                </div>
-                {/* Dynamic subject legend */}
-                {(() => {
-                  const seen = new Set<string>()
-                  const subjects: string[] = []
-                  for (const room of rooms) {
-                    for (const slot of usedSlots) {
-                      const cell = cellGrid[room]?.[slot.start]
-                      if (cell && !cell.skip && cell.occupied && cell.subject && !seen.has(cell.subject)) {
-                        seen.add(cell.subject)
-                        subjects.push(cell.subject)
-                      }
+                            }
+                            const sc = getSubjectColor(cell.subject ?? '')
+                            return (
+                              <td
+                                key={room}
+                                rowSpan={cell.rowSpan}
+                                className={`p-2 border ${sc.bg} ${sc.border} align-top`}
+                              >
+                                <div className="leading-tight space-y-1">
+                                  {/* 과정명 (big) */}
+                                  <div className={`font-black text-[13px] line-clamp-2 ${sc.text}`}>
+                                    {cell.subject || '-'}
+                                  </div>
+                                  {/* 교과명 (small, from Excel 교과목) */}
+                                  {cell.courseName && cell.courseName !== cell.subject && (
+                                    <div className="text-[10px] text-slate-500 font-semibold line-clamp-2">
+                                      {cell.courseName}
+                                    </div>
+                                  )}
+                                  {/* 강사명 */}
+                                  {cell.instructor && (
+                                    <div className="flex items-center gap-1 mt-1">
+                                      <User className="w-2.5 h-2.5 text-slate-400 shrink-0" />
+                                      <span className="text-[10px] text-slate-500 font-medium truncate">
+                                        {maskName(cell.instructor)}
+                                      </span>
+                                    </div>
+                                  )}
+                                </div>
+                              </td>
+                            )
+                          })}
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+              </div>
+              {/* Legend */}
+              {(() => {
+                const seen = new Set<string>()
+                const subjects: string[] = []
+                for (const room of rooms) {
+                  for (const slot of usedSlots) {
+                    const cell = cellGrid[room]?.[slot.start]
+                    if (cell && !cell.skip && cell.occupied && cell.subject && !seen.has(cell.subject)) {
+                      seen.add(cell.subject)
+                      subjects.push(cell.subject)
                     }
                   }
-                  return (
-                    <div className="flex flex-wrap gap-3 mt-4 text-xs text-slate-500">
-                      <span className="font-semibold text-slate-600">과목:</span>
-                      {subjects.map(sub => {
-                        const sc = getSubjectColor(sub)
-                        return (
-                          <span key={sub} className="flex items-center gap-1">
-                            <span className={`w-3 h-3 rounded border inline-block ${sc.bg} ${sc.border}`} />
-                            <span className="text-slate-700">{sub}</span>
-                          </span>
-                        )
-                      })}
-                      <span className="flex items-center gap-1">
-                        <span className="w-3 h-3 rounded bg-white border-2 border-green-400 inline-block" /> 빈 강의실
-                      </span>
-                    </div>
-                  )
-                })()}
+                }
+                return (
+                  <div className="flex flex-wrap gap-3 mt-4 text-xs text-slate-500">
+                    <span className="font-semibold text-slate-600">과정:</span>
+                    {subjects.map(sub => {
+                      const sc = getSubjectColor(sub)
+                      return (
+                        <span key={sub} className="flex items-center gap-1">
+                          <span className={`w-3 h-3 rounded border inline-block ${sc.bg} ${sc.border}`} />
+                          <span className="text-slate-700">{sub}</span>
+                        </span>
+                      )
+                    })}
+                    <span className="flex items-center gap-1">
+                      <span className="w-3 h-3 rounded bg-white border-2 border-green-400 inline-block" /> 빈 강의장
+                    </span>
+                  </div>
+                )
+              })()}
             </>
           </div>
         </div>
@@ -1352,23 +1345,80 @@ export default function TrainingCalendarPage() {
           </div>
         )}
 
-        {/* 캘린더 */}
-        {hasCalendar ? (
-          <div className="flex flex-col gap-3">
-            <div className="sticky top-4 z-30 bg-white/80 backdrop-blur-md px-5 py-3 rounded-2xl border border-slate-200 shadow-sm flex items-center justify-between mb-2">
-              <div className="flex items-center gap-3">
-                <Bell className="w-4 h-4 text-rose-500 flex-shrink-0" />
-                <span className="text-sm font-bold text-slate-700">
-                  {activeCourse.fileName.replace(/\.(xlsx|xls)$/i, '')} · 월별 일정
-                </span>
+        {/* 통합 월 캘린더 */}
+        {allCourses.length > 0 ? (
+          <div>
+            {/* Month navigation */}
+            <div className="flex items-center justify-between mb-4 bg-white rounded-2xl border border-slate-200 shadow-sm px-5 py-3">
+              <button
+                onClick={() => setCurrentViewMonth(prev => {
+                  const d = new Date(prev.year, prev.month - 1, 1)
+                  return { year: d.getFullYear(), month: d.getMonth() }
+                })}
+                className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-bold text-slate-600 hover:bg-slate-100 transition-colors"
+              >
+                <ChevronLeft className="w-4 h-4" /> 이전 달
+              </button>
+
+              <div className="text-center">
+                <h2 className="text-xl font-black text-slate-900">
+                  {currentViewMonth.year}년 {currentViewMonth.month + 1}월
+                </h2>
+                {isMonthCurrent(currentViewMonth.year, currentViewMonth.month) && (
+                  <p className="text-xs text-blue-600 font-semibold mt-0.5">이번 달 · 수업 날짜 클릭 → 강의장 현황</p>
+                )}
+                {!isMonthCurrent(currentViewMonth.year, currentViewMonth.month) && (
+                  <p className="text-xs text-slate-400 mt-0.5">수업 날짜 클릭 → 강의장 현황</p>
+                )}
               </div>
-              <div className="flex items-center gap-1 text-xs text-slate-400">
-                <LayoutGrid className="w-3.5 h-3.5" />
-                <span className="hidden sm:inline">수업 날짜 클릭 → 강의장 현황</span>
+
+              <div className="flex items-center gap-2">
+                {!isMonthCurrent(currentViewMonth.year, currentViewMonth.month) && (
+                  <button
+                    onClick={() => {
+                      const today = new Date()
+                      setCurrentViewMonth({ year: today.getFullYear(), month: today.getMonth() })
+                    }}
+                    className="text-xs px-3 py-1.5 rounded-xl bg-blue-50 text-blue-600 font-bold hover:bg-blue-100 transition-colors border border-blue-200"
+                  >
+                    오늘
+                  </button>
+                )}
+                <button
+                  onClick={() => setCurrentViewMonth(prev => {
+                    const d = new Date(prev.year, prev.month + 1, 1)
+                    return { year: d.getFullYear(), month: d.getMonth() }
+                  })}
+                  className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-bold text-slate-600 hover:bg-slate-100 transition-colors"
+                >
+                  다음 달 <ChevronRight className="w-4 h-4" />
+                </button>
               </div>
             </div>
-            <div ref={calendarRef}>
-              {groupWeeksIntoMonths(activeCourse.weeks).map(month => renderMonth(month))}
+
+            {/* Calendar grid */}
+            <div className="bg-white rounded-2xl shadow-xl overflow-hidden border border-slate-200">
+              {/* Day headers */}
+              <div className="grid grid-cols-7 bg-slate-100 border-b border-slate-200">
+                {['일', '월', '화', '수', '목', '금', '토'].map((d, i) => (
+                  <div
+                    key={d}
+                    className={`py-2.5 text-center text-[11px] font-black tracking-widest ${
+                      i === 0 ? 'text-rose-500' : i === 6 ? 'text-blue-600' : 'text-slate-500'
+                    }`}
+                  >
+                    {d}
+                  </div>
+                ))}
+              </div>
+              {/* Date rows */}
+              {buildMonthGrid(currentViewMonth.year, currentViewMonth.month).map((row, ri) => (
+                <div key={ri} className="grid grid-cols-7 border-b border-slate-100 last:border-b-0">
+                  {row.map((day, ci) => (
+                    <React.Fragment key={ci}>{renderUnifiedDay(day)}</React.Fragment>
+                  ))}
+                </div>
+              ))}
             </div>
           </div>
         ) : (
