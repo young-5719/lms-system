@@ -591,6 +591,8 @@ export default function TrainingCalendarPage() {
   const [isDragging, setIsDragging] = useState(false)
   const [isGenerating, setIsGenerating] = useState(false)
   const [isInitialized, setIsInitialized] = useState(false)
+  const [isSyncing, setIsSyncing] = useState(false)
+  const syncTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const [currentViewMonth, setCurrentViewMonth] = useState<{ year: number; month: number }>(() => {
     const today = new Date()
     return { year: today.getFullYear(), month: today.getMonth() }
@@ -610,40 +612,81 @@ export default function TrainingCalendarPage() {
     allCourses[0] ??
     null
 
-  // ── 초기 로드: localStorage → 상태 복원 ─────────────────────────────────────
+  // ── 초기 로드: DB → localStorage 순서로 복원 ────────────────────────────────
   useEffect(() => {
-    try {
-      const raw = localStorage.getItem('lms-training-data')
-      if (raw) {
-        const parsed = JSON.parse(raw)
-        const cats = deserializeCategories(parsed.categories ?? [])
-        if (cats.length > 0) {
-          setCategories(cats)
-          setActiveCategory(parsed.activeCategory ?? null)
-          setActiveCourseId(parsed.activeCourseId ?? null)
-          if (Array.isArray(parsed.expandedMonths)) {
-            setExpandedMonths(new Set(parsed.expandedMonths))
+    const load = async () => {
+      // 1) 먼저 DB에서 시도
+      try {
+        const res = await fetch('/api/training-data')
+        if (res.ok) {
+          const dbData = await res.json()
+          if (dbData && Array.isArray(dbData.categories) && dbData.categories.length > 0) {
+            const cats = deserializeCategories(dbData.categories)
+            if (cats.length > 0) {
+              setCategories(cats)
+              setActiveCategory(dbData.activeCategory ?? null)
+              setActiveCourseId(dbData.activeCourseId ?? null)
+              if (Array.isArray(dbData.expandedMonths)) {
+                setExpandedMonths(new Set(dbData.expandedMonths))
+              }
+              setIsInitialized(true)
+              return
+            }
           }
         }
-      }
-    } catch { /* no-op */ }
-    setIsInitialized(true)
+      } catch { /* no-op */ }
+
+      // 2) DB에 없으면 localStorage 폴백
+      try {
+        const raw = localStorage.getItem('lms-training-data')
+        if (raw) {
+          const parsed = JSON.parse(raw)
+          const cats = deserializeCategories(parsed.categories ?? [])
+          if (cats.length > 0) {
+            setCategories(cats)
+            setActiveCategory(parsed.activeCategory ?? null)
+            setActiveCourseId(parsed.activeCourseId ?? null)
+            if (Array.isArray(parsed.expandedMonths)) {
+              setExpandedMonths(new Set(parsed.expandedMonths))
+            }
+          }
+        }
+      } catch { /* no-op */ }
+      setIsInitialized(true)
+    }
+    load()
   }, [])
 
   // ── 모달 닫힐 때 선택된 과정 초기화 ─────────────────────────────────────────
   useEffect(() => { setSelectedModalCourse(null) }, [modalDate])
 
-  // ── 전체 상태 저장 (초기화 완료 후에만) ─────────────────────────────────────
+  // ── 전체 상태 저장 (localStorage 즉시 + DB 디바운스 3초) ─────────────────────
   useEffect(() => {
     if (!isInitialized) return
-    try {
-      localStorage.setItem('lms-training-data', JSON.stringify({
-        categories: serializeCategories(categories),
-        activeCategory,
-        activeCourseId,
-        expandedMonths: Array.from(expandedMonths),
-      }))
-    } catch { /* no-op */ }
+    const payload = {
+      categories: serializeCategories(categories),
+      activeCategory,
+      activeCourseId,
+      expandedMonths: Array.from(expandedMonths),
+    }
+
+    // localStorage 즉시 저장 (빠른 로드 캐시)
+    try { localStorage.setItem('lms-training-data', JSON.stringify(payload)) } catch { /* no-op */ }
+
+    // DB 저장 디바운스 (3초 후 전송)
+    if (syncTimerRef.current) clearTimeout(syncTimerRef.current)
+    syncTimerRef.current = setTimeout(async () => {
+      setIsSyncing(true)
+      try {
+        await fetch('/api/training-data', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        })
+      } catch { /* no-op */ } finally {
+        setIsSyncing(false)
+      }
+    }, 3000)
   }, [categories, activeCategory, activeCourseId, expandedMonths, isInitialized])
 
   // ── localStorage 동기화 (대시보드 연동) ─────────────────────────────────────
@@ -1287,6 +1330,15 @@ export default function TrainingCalendarPage() {
           <div>
             <h1 className="text-3xl font-black text-slate-900 flex items-center gap-3">
               <Calendar className="w-10 h-10 text-blue-600" /> 훈련 주간 매니저
+              {isSyncing && (
+                <span className="text-xs font-normal text-slate-400 flex items-center gap-1">
+                  <svg className="animate-spin w-3 h-3" viewBox="0 0 24 24" fill="none">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"/>
+                  </svg>
+                  저장 중...
+                </span>
+              )}
             </h1>
             <p className="text-slate-500 mt-1">
               엑셀 파일 또는 폴더를 업로드하면 월별 훈련 일정을 자동으로 생성합니다.

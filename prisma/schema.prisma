@@ -95,3 +95,4 @@ model Course {
   @@index([trainingId])
   @@map("courses")
 }
+
