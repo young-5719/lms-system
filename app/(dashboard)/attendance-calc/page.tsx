@@ -175,39 +175,104 @@ export default function AttendanceCalcPage() {
   const [editingTabName, setEditingTabName] = useState('')
 
   const scheduleInputRef = useRef<HTMLInputElement>(null)
+  const [isInitialized, setIsInitialized] = useState(false)
+  const [isSyncing, setIsSyncing] = useState(false)
+  const syncTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
-  // ─── localStorage 초기 로드 ────────────────────────────────────────────────
+  // ─── 초기 로드: DB → localStorage 순서 ────────────────────────────────────
 
   useEffect(() => {
-    try {
-      const stored = localStorage.getItem(STORAGE_KEY)
-      const storedActive = localStorage.getItem(ACTIVE_COURSE_KEY)
-      if (stored) {
-        const parsed: CourseConfig[] = JSON.parse(stored)
-        if (parsed.length > 0) {
-          setCourses(parsed)
-          const activeId = storedActive && parsed.find(c => c.id === storedActive)
-            ? storedActive
-            : parsed[0].id
-          setActiveCourseId(activeId)
-          const initRuntime: Record<string, CourseRuntime> = {}
-          parsed.forEach(c => { initRuntime[c.id] = makeEmptyRuntime() })
-          setRuntimeData(initRuntime)
-          return
+    const load = async () => {
+      // 1) DB 우선 시도
+      try {
+        const res = await fetch('/api/attendance-calc-data')
+        if (res.ok) {
+          const dbData = await res.json()
+          if (dbData && Array.isArray(dbData.courses) && dbData.courses.length > 0) {
+            const parsed: CourseConfig[] = dbData.courses
+            const activeId = dbData.activeCourseId && parsed.find(c => c.id === dbData.activeCourseId)
+              ? dbData.activeCourseId
+              : parsed[0].id
+            setCourses(parsed)
+            setActiveCourseId(activeId)
+            const initRuntime: Record<string, CourseRuntime> = {}
+            parsed.forEach(c => {
+              initRuntime[c.id] = {
+                ...makeEmptyRuntime(),
+                schedule: dbData.schedules?.[c.id] ?? [],
+                uploadedFiles: dbData.uploadedFiles?.[c.id] ?? [],
+              }
+            })
+            setRuntimeData(initRuntime)
+            setIsInitialized(true)
+            return
+          }
         }
-      }
-    } catch (_) { /* ignore */ }
-    addCourse()
+      } catch { /* no-op */ }
+
+      // 2) localStorage 폴백
+      try {
+        const stored = localStorage.getItem(STORAGE_KEY)
+        const storedActive = localStorage.getItem(ACTIVE_COURSE_KEY)
+        if (stored) {
+          const parsed: CourseConfig[] = JSON.parse(stored)
+          if (parsed.length > 0) {
+            setCourses(parsed)
+            const activeId = storedActive && parsed.find(c => c.id === storedActive)
+              ? storedActive
+              : parsed[0].id
+            setActiveCourseId(activeId)
+            const initRuntime: Record<string, CourseRuntime> = {}
+            parsed.forEach(c => { initRuntime[c.id] = makeEmptyRuntime() })
+            setRuntimeData(initRuntime)
+            setIsInitialized(true)
+            return
+          }
+        }
+      } catch { /* no-op */ }
+
+      addCourse()
+      setIsInitialized(true)
+    }
+    load()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  useEffect(() => {
-    if (courses.length > 0) localStorage.setItem(STORAGE_KEY, JSON.stringify(courses))
-  }, [courses])
+  // ─── 저장: localStorage 즉시 + DB 디바운스 3초 ────────────────────────────
 
   useEffect(() => {
-    if (activeCourseId) localStorage.setItem(ACTIVE_COURSE_KEY, activeCourseId)
-  }, [activeCourseId])
+    if (!isInitialized) return
+
+    const schedules: Record<string, ScheduleRow[]> = {}
+    const uploadedFiles: Record<string, UploadedFile[]> = {}
+    courses.forEach(c => {
+      schedules[c.id] = runtimeData[c.id]?.schedule ?? []
+      uploadedFiles[c.id] = runtimeData[c.id]?.uploadedFiles ?? []
+    })
+
+    const payload = { courses, activeCourseId, schedules, uploadedFiles }
+
+    // localStorage 즉시 저장
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(courses))
+      localStorage.setItem(ACTIVE_COURSE_KEY, activeCourseId)
+    } catch { /* no-op */ }
+
+    // DB 디바운스 저장 (3초)
+    if (syncTimerRef.current) clearTimeout(syncTimerRef.current)
+    syncTimerRef.current = setTimeout(async () => {
+      setIsSyncing(true)
+      try {
+        await fetch('/api/attendance-calc-data', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        })
+      } catch { /* no-op */ } finally {
+        setIsSyncing(false)
+      }
+    }, 3000)
+  }, [courses, activeCourseId, runtimeData, isInitialized])
 
   // ─── 과정 CRUD ─────────────────────────────────────────────────────────────
 
@@ -231,22 +296,47 @@ export default function AttendanceCalcPage() {
     if (!confirm('이 과정을 삭제하시겠습니까?\n설정과 데이터가 모두 제거됩니다.')) return
     const remaining = courses.filter(c => c.id !== id)
 
+    let nextCourses: CourseConfig[]
+    let nextRuntime: Record<string, CourseRuntime>
+    let nextActiveId: string
+
     if (remaining.length === 0) {
-      // 마지막 과정 삭제 시 빈 과정 하나 자동 생성
       const newId = `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`
       const newCourse: CourseConfig = { id: newId, name: '과정 1', courseCodeId: '', round: '1', startDate: '', endDate: '' }
-      setCourses([newCourse])
-      setRuntimeData({ [newId]: makeEmptyRuntime() })
-      setActiveCourseId(newId)
+      nextCourses = [newCourse]
+      nextRuntime = { [newId]: makeEmptyRuntime() }
+      nextActiveId = newId
+      setCourses(nextCourses)
+      setRuntimeData(nextRuntime)
+      setActiveCourseId(nextActiveId)
     } else {
-      setCourses(remaining)
+      nextCourses = remaining
+      nextActiveId = activeCourseId !== id ? activeCourseId : remaining[0].id
+      setCourses(nextCourses)
       setRuntimeData(prev => {
         const next = { ...prev }
         delete next[id]
+        nextRuntime = next
         return next
       })
-      setActiveCourseId(prev => prev !== id ? prev : remaining[0].id)
+      setActiveCourseId(nextActiveId)
+      nextRuntime = { ...runtimeData }
+      delete nextRuntime[id]
     }
+
+    // 삭제 즉시 DB 반영
+    if (syncTimerRef.current) clearTimeout(syncTimerRef.current)
+    const schedules: Record<string, ScheduleRow[]> = {}
+    const uploadedFiles: Record<string, UploadedFile[]> = {}
+    nextCourses.forEach(c => {
+      schedules[c.id] = nextRuntime?.[c.id]?.schedule ?? []
+      uploadedFiles[c.id] = nextRuntime?.[c.id]?.uploadedFiles ?? []
+    })
+    fetch('/api/attendance-calc-data', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ courses: nextCourses, activeCourseId: nextActiveId, schedules, uploadedFiles }),
+    }).catch(() => { /* no-op */ })
   }, [courses])
 
   const updateCourseConfig = useCallback((id: string, patch: Partial<CourseConfig>) => {
@@ -561,6 +651,15 @@ export default function AttendanceCalcPage() {
               <CheckCircle size={24} />
             </div>
             NCS 정밀 출석 분석 시스템
+            {isSyncing && (
+              <span className="text-xs font-normal text-slate-400 flex items-center gap-1">
+                <svg className="animate-spin w-3 h-3" viewBox="0 0 24 24" fill="none">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"/>
+                </svg>
+                저장 중...
+              </span>
+            )}
           </h1>
           <p className="text-slate-500 mt-1 ml-1 text-sm">
             훈련 기준(75%) 진단 및 점심시간 자동 제외 분석
