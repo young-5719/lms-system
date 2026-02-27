@@ -984,189 +984,232 @@ export default function TrainingCalendarPage() {
     const [, mStr, dStr] = modalDate.split('-')
     const dayName = WEEKDAYS[dateObj.getDay()]
 
-    // Collect all special notices for this date from every course
-    const notices: string[] = []
-    categories.forEach(cat => {
-      cat.courses.forEach(c => {
-        const dayData = c.data[modalDate]
-        const { subject } = parseCourseFileName(c.fileName)
-        const label = subject || c.fileName.replace(/\.(xlsx|xls)$/i, '')
-        const dateAlerts = c.alerts[modalDate] ?? []
-        dateAlerts.forEach(a => {
-          if (
-            a.includes('강사 변경') ||
-            a.includes('NCS 시작') ||
-            a.includes('NCS 종료') ||
-            a.includes('개강일') ||
-            a.includes('종강일') ||
-            a.includes('[시작]') ||
-            a.includes('[종료]')
-          ) {
-            notices.push(`[${label}] ${a}`)
-          }
-        })
-        if (dayData?.isDiscretionary) {
-          notices.push(`[${label}] 재량교과`)
-        }
-      })
-    })
+    // 과정별 세부 데이터 — 실업자 먼저
+    const perCourseData = categories
+      .flatMap(cat =>
+        cat.courses
+          .filter(c => c.data[modalDate])
+          .map(c => {
+            const dayData = c.data[modalDate]
+            const { subject } = parseCourseFileName(c.fileName)
+            const notices = [
+              ...(c.alerts[modalDate] ?? []),
+              ...(dayData.isDiscretionary ? ['재량교과'] : []),
+            ]
+            return {
+              id: c.id,
+              subject: subject || c.fileName.replace(/\.(xlsx|xls)$/i, ''),
+              catName: cat.name,
+              isUnemployed: isUnemployedCat(cat.name),
+              timeRange: `${dayData.minStart} ~ ${dayData.maxEnd}`,
+              subjects: Array.from(dayData.subjects),
+              instructors: Array.from(dayData.instructors),
+              notices,
+            }
+          })
+      )
+      .sort((a, b) => (b.isUnemployed ? 1 : 0) - (a.isUnemployed ? 1 : 0))
 
     return (
       <div
-        className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4"
+        className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-3"
         onClick={() => setModalDate(null)}
       >
         <div
-          className="bg-white rounded-2xl shadow-2xl w-full max-w-5xl max-h-[85vh] flex flex-col"
+          className="bg-white rounded-2xl shadow-2xl w-[96vw] max-w-[1400px] max-h-[92vh] flex flex-col"
           onClick={e => e.stopPropagation()}
         >
           {/* Header */}
           <div className="flex items-center justify-between px-6 py-4 bg-slate-900 text-white rounded-t-2xl flex-shrink-0">
-            <h2 className="text-lg font-black flex items-center gap-3">
+            <h2 className="text-xl font-black flex items-center gap-3">
               <LayoutGrid className="w-5 h-5 text-blue-400" />
-              {parseInt(mStr)}월 {parseInt(dStr)}일 ({dayName}) 강의장 현황
+              {parseInt(mStr)}월 {parseInt(dStr)}일 ({dayName}) 세부 일정
             </h2>
-            <div className="flex items-center gap-4">
-              <span className="text-xs text-slate-400">
-                {allCourses.length}개 과정 합산
-              </span>
-              <button
-                onClick={() => setModalDate(null)}
-                className="text-slate-400 hover:text-white transition-colors"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
+            <button
+              onClick={() => setModalDate(null)}
+              className="text-slate-400 hover:text-white transition-colors p-1"
+            >
+              <X className="w-6 h-6" />
+            </button>
           </div>
 
-          {/* Special notices */}
-          {notices.length > 0 && (
-            <div className="px-5 pt-4 pb-2 border-b border-slate-100 flex-shrink-0">
-              <div className="flex items-start gap-2 flex-wrap">
-                <div className="flex items-center gap-1.5 shrink-0 mt-0.5">
-                  <AlertTriangle className="w-4 h-4 text-red-500" />
-                  <span className="text-xs font-black text-red-600">특이사항</span>
-                </div>
-                {notices.map((n, i) => (
-                  <span
-                    key={i}
-                    className="text-xs font-black text-red-600 bg-red-50 border border-red-200 px-2 py-1 rounded-lg leading-tight"
-                  >
-                    {n}
-                  </span>
-                ))}
-              </div>
-            </div>
-          )}
+          <div className="overflow-auto flex-1 p-5 space-y-6">
 
-          <div className="overflow-auto flex-1 p-5">
-            {!hasData && (
-              <div className="mb-3 px-4 py-2 bg-slate-50 rounded-xl text-center text-sm text-slate-400 border border-slate-200">
-                해당 날짜에 등록된 수업이 없습니다 — 601호~610호 모두 빈 강의장입니다
+            {/* ── 섹션 1: 과정별 세부 일정 ── */}
+            {perCourseData.length > 0 ? (
+              <section>
+                <h3 className="text-sm font-black text-slate-500 uppercase tracking-widest mb-3 flex items-center gap-2">
+                  <BookOpen className="w-4 h-4" /> 과정별 세부 일정
+                </h3>
+                <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+                  {perCourseData.map(entry => {
+                    const sc = getSubjectColor(entry.subject)
+                    return (
+                      <div
+                        key={entry.id}
+                        className={`rounded-xl border-2 p-4 flex flex-col gap-3 ${sc.border} bg-white`}
+                      >
+                        {/* 과정명 + 카테고리 */}
+                        <div className="flex items-start justify-between gap-2">
+                          <p className={`font-black text-[15px] leading-snug ${sc.text}`}>
+                            {entry.subject}
+                          </p>
+                          <span className={`shrink-0 text-[10px] font-bold px-2 py-0.5 rounded-full border ${sc.bg} ${sc.border} ${sc.text}`}>
+                            {entry.catName}
+                          </span>
+                        </div>
+
+                        {/* 시간대 */}
+                        <div className="flex items-center gap-2">
+                          <Clock className="w-4 h-4 text-slate-400 shrink-0" />
+                          <span className="text-sm font-black text-slate-700">{entry.timeRange}</span>
+                        </div>
+
+                        {/* 교과목 목록 */}
+                        {entry.subjects.length > 0 && (
+                          <div className="space-y-1.5">
+                            {entry.subjects.map((s, i) => (
+                              <div key={i} className="flex items-start gap-2">
+                                <span className={`mt-1 w-1.5 h-1.5 rounded-full shrink-0 ${sc.text.replace('text-', 'bg-')}`} />
+                                <span className="text-sm text-slate-700 leading-snug">{s}</span>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+
+                        {/* 강사 */}
+                        {entry.instructors.length > 0 && (
+                          <div className="flex items-center gap-1.5 pt-1 border-t border-slate-100">
+                            <User className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                            <span className="text-xs text-slate-500">
+                              {entry.instructors.map(maskName).join(' · ')}
+                            </span>
+                          </div>
+                        )}
+
+                        {/* 특이사항 — 빨간 볼드, 과정 카드 안에 통합 */}
+                        {entry.notices.length > 0 && (
+                          <div className="pt-2 border-t-2 border-red-100 space-y-1">
+                            {entry.notices.map((n, i) => (
+                              <div key={i} className="flex items-start gap-1.5">
+                                <AlertTriangle className="w-3.5 h-3.5 text-red-500 shrink-0 mt-0.5" />
+                                <span className="text-sm font-black text-red-600 leading-snug">{n}</span>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    )
+                  })}
+                </div>
+              </section>
+            ) : (
+              <div className="py-6 text-center text-slate-400 text-sm border border-dashed border-slate-200 rounded-xl">
+                해당 날짜에 등록된 수업이 없습니다
               </div>
             )}
-            <>
-              <div className="overflow-x-auto">
-                <table className="w-full border-collapse text-sm min-w-[500px]">
-                  <thead>
-                    <tr>
-                      <th className="p-2 border text-xs font-semibold text-gray-600 w-[110px] bg-gray-50 whitespace-nowrap">
-                        시간
-                      </th>
-                      {rooms.map(room => (
-                        <th key={room} className="p-2 border text-center text-sm font-bold min-w-[120px] bg-gray-50">
-                          {room}
+
+            {/* ── 섹션 2: 강의장 시간표 ── */}
+            {hasData && (
+              <section>
+                <h3 className="text-sm font-black text-slate-500 uppercase tracking-widest mb-3 flex items-center gap-2">
+                  <LayoutGrid className="w-4 h-4" /> 강의장 시간표
+                </h3>
+                <div className="overflow-x-auto rounded-xl border border-slate-200">
+                  <table className="w-full border-collapse text-sm min-w-[600px]">
+                    <thead>
+                      <tr>
+                        <th className="p-2 border-b border-r text-xs font-semibold text-slate-500 w-[110px] bg-slate-50 whitespace-nowrap">
+                          시간
                         </th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {usedSlots.map(slot => {
-                      const timeColors = getTimeColor(slot.start)
-                      return (
-                        <tr key={slot.start}>
-                          <td className={`p-2 border text-xs font-medium whitespace-nowrap ${timeColors.bg} ${timeColors.text}`}>
-                            {slot.label}
-                          </td>
-                          {rooms.map(room => {
-                            const cell = cellGrid[room]?.[slot.start]
-                            if (!cell || cell.skip) return null
-                            if (!cell.occupied) {
+                        {rooms.map(room => (
+                          <th key={room} className="p-2 border-b border-r last:border-r-0 text-center text-xs font-bold text-slate-700 min-w-[100px] bg-slate-50">
+                            {room}
+                          </th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {usedSlots.map(slot => {
+                        const tc = getTimeColor(slot.start)
+                        return (
+                          <tr key={slot.start}>
+                            <td className={`p-2 border-b border-r text-xs font-medium whitespace-nowrap ${tc.bg} ${tc.text}`}>
+                              {slot.label}
+                            </td>
+                            {rooms.map(room => {
+                              const cell = cellGrid[room]?.[slot.start]
+                              if (!cell || cell.skip) return null
+                              if (!cell.occupied) {
+                                return (
+                                  <td key={room} className="p-2 border-b border-r last:border-r-0 text-center bg-white">
+                                    <span className="text-slate-200 text-base font-light">-</span>
+                                  </td>
+                                )
+                              }
+                              const sc = getSubjectColor(cell.subject ?? '')
                               return (
-                                <td key={room} className="p-2 border text-center bg-white border-green-200">
-                                  <span className="text-green-400 text-xs font-bold">빈 강의장</span>
+                                <td
+                                  key={room}
+                                  rowSpan={cell.rowSpan}
+                                  className={`p-2 border-b border-r last:border-r-0 ${sc.bg} ${sc.border} align-top`}
+                                >
+                                  <div className="space-y-0.5">
+                                    <div className={`font-black text-[12px] leading-snug line-clamp-3 ${sc.text}`}>
+                                      {cell.subject || '-'}
+                                    </div>
+                                    {cell.courseName && cell.courseName !== cell.subject && (
+                                      <div className="text-[10px] text-slate-500 line-clamp-2">
+                                        {cell.courseName}
+                                      </div>
+                                    )}
+                                    {cell.instructor && (
+                                      <div className="flex items-center gap-1 mt-1">
+                                        <User className="w-2.5 h-2.5 text-slate-400 shrink-0" />
+                                        <span className="text-[10px] text-slate-500 truncate">
+                                          {maskName(cell.instructor)}
+                                        </span>
+                                      </div>
+                                    )}
+                                  </div>
                                 </td>
                               )
-                            }
-                            const sc = getSubjectColor(cell.subject ?? '')
-                            return (
-                              <td
-                                key={room}
-                                rowSpan={cell.rowSpan}
-                                className={`p-2 border ${sc.bg} ${sc.border} align-top`}
-                              >
-                                <div className="leading-tight space-y-1">
-                                  {/* 과정명 (big) */}
-                                  <div className={`font-black text-[13px] line-clamp-2 ${sc.text}`}>
-                                    {cell.subject || '-'}
-                                  </div>
-                                  {/* 교과명 (small, from Excel 교과목) */}
-                                  {cell.courseName && cell.courseName !== cell.subject && (
-                                    <div className="text-[10px] text-slate-500 font-semibold line-clamp-2">
-                                      {cell.courseName}
-                                    </div>
-                                  )}
-                                  {/* 강사명 */}
-                                  {cell.instructor && (
-                                    <div className="flex items-center gap-1 mt-1">
-                                      <User className="w-2.5 h-2.5 text-slate-400 shrink-0" />
-                                      <span className="text-[10px] text-slate-500 font-medium truncate">
-                                        {maskName(cell.instructor)}
-                                      </span>
-                                    </div>
-                                  )}
-                                </div>
-                              </td>
-                            )
-                          })}
-                        </tr>
-                      )
-                    })}
-                  </tbody>
-                </table>
-              </div>
-              {/* Legend */}
-              {(() => {
-                const seen = new Set<string>()
-                const subjects: string[] = []
-                for (const room of rooms) {
-                  for (const slot of usedSlots) {
-                    const cell = cellGrid[room]?.[slot.start]
-                    if (cell && !cell.skip && cell.occupied && cell.subject && !seen.has(cell.subject)) {
-                      seen.add(cell.subject)
-                      subjects.push(cell.subject)
+                            })}
+                          </tr>
+                        )
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+                {/* Legend */}
+                {(() => {
+                  const seen = new Set<string>()
+                  const subjects: string[] = []
+                  for (const room of rooms) {
+                    for (const slot of usedSlots) {
+                      const cell = cellGrid[room]?.[slot.start]
+                      if (cell && !cell.skip && cell.occupied && cell.subject && !seen.has(cell.subject)) {
+                        seen.add(cell.subject); subjects.push(cell.subject)
+                      }
                     }
                   }
-                }
-                return (
-                  <div className="flex flex-wrap gap-3 mt-4 text-xs text-slate-500">
-                    <span className="font-semibold text-slate-600">과정:</span>
-                    {subjects.map(sub => {
-                      const sc = getSubjectColor(sub)
-                      return (
-                        <span key={sub} className="flex items-center gap-1">
-                          <span className={`w-3 h-3 rounded border inline-block ${sc.bg} ${sc.border}`} />
-                          <span className="text-slate-700">{sub}</span>
-                        </span>
-                      )
-                    })}
-                    <span className="flex items-center gap-1">
-                      <span className="w-3 h-3 rounded bg-white border-2 border-green-400 inline-block" /> 빈 강의장
-                    </span>
-                  </div>
-                )
-              })()}
-            </>
+                  return subjects.length > 0 ? (
+                    <div className="flex flex-wrap gap-3 mt-3 text-xs text-slate-500">
+                      {subjects.map(sub => {
+                        const sc = getSubjectColor(sub)
+                        return (
+                          <span key={sub} className="flex items-center gap-1">
+                            <span className={`w-3 h-3 rounded border inline-block ${sc.bg} ${sc.border}`} />
+                            <span className="text-slate-700">{sub}</span>
+                          </span>
+                        )
+                      })}
+                    </div>
+                  ) : null
+                })()}
+              </section>
+            )}
+
           </div>
         </div>
       </div>
