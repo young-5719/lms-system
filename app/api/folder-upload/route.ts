@@ -2,24 +2,28 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import * as XLSX from 'xlsx'
 
-// 폴더명 → course type 매핑 (과정평가형은 스킵)
+// 근로자/실업자/일반 → course_daily_schedules (출석부용)
 const FOLDER_TYPE_MAP: Record<string, string> = {
   '근로자': 'EMPLOYED',
   '실업자': 'UNEMPLOYED',
   '일반': 'GENERAL',
 }
 
-const FOLDER_CATEGORY_NAME: Record<string, string> = {
-  'EMPLOYED': '근로자',
-  'UNEMPLOYED': '실업자',
-  'GENERAL': '일반',
-}
-
-// webkitRelativePath에서 폴더 타입 추출
+// webkitRelativePath에서 출석부용 폴더 타입 추출 (근로자/실업자/일반만)
 function getFolderType(relativePath: string): string | null {
   const parts = relativePath.split('/')
   for (const part of parts) {
     if (FOLDER_TYPE_MAP[part]) return FOLDER_TYPE_MAP[part]
+  }
+  return null
+}
+
+// 훈련 주간 달력용 카테고리명 추출 (과정평가형 포함 전체)
+function getTCCategoryName(relativePath: string): string | null {
+  const parts = relativePath.split('/')
+  for (const part of parts) {
+    if (FOLDER_TYPE_MAP[part]) return part               // 근로자, 실업자, 일반
+    if (part.includes('과정평가형') || part.includes('과평')) return '과정평가형'
   }
   return null
 }
@@ -67,7 +71,8 @@ function getStartDateFromFilename(filename: string): string | null {
   return `${d.slice(0, 4)}-${d.slice(4, 6)}-${d.slice(6, 8)}`
 }
 
-// xlsx rows → 날짜별 시간표 (course_daily_schedules용)
+// ─── course_daily_schedules용 파싱 ───────────────────────────────────────────
+
 interface DaySchedule {
   start_time: string
   end_time: string
@@ -129,7 +134,7 @@ function parseScheduleFromRows(rows: unknown[][]): { schedules: Map<string, DayS
   return { schedules, roomNumber }
 }
 
-// ─── Training Calendar Data Format ───────────────────────────────────────────
+// ─── 훈련 주간 달력용 파싱 ───────────────────────────────────────────────────
 
 interface TCSession {
   start: string
@@ -191,7 +196,6 @@ function generateWeeksTC(min: string, max: string): string[][] {
   return weekList
 }
 
-// 훈련 주간 달력 형식으로 파싱 (교과목, 강사, 강의실, 세션 포함)
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function processForTrainingCalendar(rawData: Record<string, any>[]): {
   data: Record<string, TCDayData>
@@ -226,6 +230,7 @@ function processForTrainingCalendar(rawData: Record<string, any>[]): {
     const currentStart = parseExcelTime(item['시작시간'])
     const currentEnd = parseExcelTime(item['종료시간'])
 
+    // 점심 행: 점심 시간만 기록하고 세션 추가 안 함
     if (type === '점심' && currentStart && currentEnd) {
       dayData.lunchStart = currentStart
       dayData.lunchEnd = currentEnd
@@ -326,9 +331,13 @@ export async function POST(request: NextRequest) {
 
     if (files.length === 0) return NextResponse.json({ error: '파일이 없습니다' }, { status: 400 })
 
+    // 근로자 → course_daily_schedules 결과
     const matched: { filename: string; courseName: string; folderType: string; days: number }[] = []
     const unmatched: { filename: string; reason: string }[] = []
+    // 인식되지 않은 폴더 (완전히 제외)
     const skipped: { filename: string; reason: string }[] = []
+    // 달력 전용 (실업자/일반/과정평가형 → 훈련 주간 달력에만 저장)
+    const calendarOnly: { filename: string; category: string }[] = []
     const allRecords: object[] = []
 
     // 훈련 주간 달력용 카테고리 맵
@@ -338,16 +347,16 @@ export async function POST(request: NextRequest) {
       const file = files[i]
       const path = paths[i] || file.name
 
-      // 폴더 타입 확인
-      const folderType = getFolderType(path)
-      if (!folderType) {
-        skipped.push({ filename: file.name, reason: '과정평가형 또는 미지원 폴더' })
+      const folderType = getFolderType(path)        // EMPLOYED / UNEMPLOYED / GENERAL / null
+      const tcCatName = getTCCategoryName(path)     // 근로자 / 실업자 / 일반 / 과정평가형 / null
+
+      // 완전히 인식 불가능한 폴더 → 제외
+      if (!tcCatName) {
+        skipped.push({ filename: file.name, reason: '미지원 폴더' })
         continue
       }
 
-      const startDateFromName = getStartDateFromFilename(file.name)
-
-      // xlsx 한 번 읽기 → 두 가지 형식으로 파싱
+      // xlsx 한 번 읽기 → 두 형식으로 파싱
       let schedules: Map<string, DaySchedule>
       let roomNumber: string
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -357,30 +366,29 @@ export async function POST(request: NextRequest) {
         const wb = XLSX.read(new Uint8Array(buf), { type: 'array' })
         const ws = wb.Sheets[wb.SheetNames[0]]
 
-        // 배열 형식 (course_daily_schedules용)
+        // 배열 형식 → course_daily_schedules용
         const rows = XLSX.utils.sheet_to_json<unknown[]>(ws, { header: 1, defval: '' }).slice(1) as unknown[][]
         const parsed = parseScheduleFromRows(rows)
         schedules = parsed.schedules
         roomNumber = parsed.roomNumber
 
-        // 키 형식 (훈련 주간 달력용)
+        // 키 형식 → 훈련 주간 달력용
         jsonData = XLSX.utils.sheet_to_json(ws) as Record<string, any>[]
       } catch {
-        unmatched.push({ filename: file.name, reason: 'xlsx 파싱 실패' })
+        skipped.push({ filename: file.name, reason: 'xlsx 파싱 실패' })
         continue
       }
 
-      // 훈련 주간 달력 데이터 생성 (과정 매칭 여부와 무관하게 처리)
+      // ── 훈련 주간 달력 데이터 (모든 폴더 처리) ──────────────────────────────
       const { data: tcData, weeks: tcWeeks, alerts: tcAlerts } = processForTrainingCalendar(jsonData)
       if (Object.keys(tcData).length > 0) {
-        const catName = FOLDER_CATEGORY_NAME[folderType] || folderType
-        const catId = `cat-${catName}`
+        const catId = `cat-${tcCatName}`
         if (!tcCategoryMap[catId]) {
-          tcCategoryMap[catId] = { id: catId, name: catName, courses: [] }
+          tcCategoryMap[catId] = { id: catId, name: tcCatName, courses: [] }
         }
         const courseId = `course-${file.name.replace(/\.(xlsx|xls)$/i, '').replace(/[^a-zA-Z0-9가-힣_-]/g, '_')}`
-        const existingIdx = tcCategoryMap[catId].courses.findIndex(c => c.fileName === file.name)
         const entry: TCCourseEntry = { id: courseId, fileName: file.name, data: tcData, weeks: tcWeeks, alerts: tcAlerts }
+        const existingIdx = tcCategoryMap[catId].courses.findIndex(c => c.fileName === file.name)
         if (existingIdx >= 0) {
           tcCategoryMap[catId].courses[existingIdx] = entry
         } else {
@@ -388,13 +396,19 @@ export async function POST(request: NextRequest) {
         }
       }
 
-      // course_daily_schedules용: 데이터 없으면 스킵
+      // ── course_daily_schedules: 근로자(EMPLOYED)만 처리 ─────────────────────
+      if (folderType !== 'EMPLOYED') {
+        calendarOnly.push({ filename: file.name, category: tcCatName })
+        continue
+      }
+
       if (schedules.size === 0 || !roomNumber) {
         unmatched.push({ filename: file.name, reason: '시간표 데이터 없음' })
         continue
       }
 
-      // 과정 매칭: 개강일 + 강의장으로 조회
+      // 과정 매칭: 개강일 + 강의장
+      const startDateFromName = getStartDateFromFilename(file.name)
       const roomBase = roomNumber.replace('호', '')
       let courseId: number | null = null
       let courseName = ''
@@ -403,7 +417,7 @@ export async function POST(request: NextRequest) {
       if (startDateFromName) {
         const { data: courses } = await supabase
           .from('courses')
-          .select('id, course_name, type')
+          .select('id, course_name')
           .eq('start_date', startDateFromName)
           .like('room_number', `${roomBase}호%`)
           .limit(1)
@@ -420,7 +434,7 @@ export async function POST(request: NextRequest) {
         if (firstDate) {
           const { data: courses } = await supabase
             .from('courses')
-            .select('id, course_name, type')
+            .select('id, course_name')
             .lte('start_date', firstDate)
             .gte('end_date', firstDate)
             .like('room_number', `${roomBase}호%`)
@@ -438,7 +452,6 @@ export async function POST(request: NextRequest) {
         continue
       }
 
-      // upsert 레코드 준비
       for (const [date, sched] of schedules) {
         allRecords.push({
           course_id: courseId,
@@ -463,20 +476,22 @@ export async function POST(request: NextRequest) {
       if (error) throw error
     }
 
-    // 훈련 주간 달력 상태 저장
-    const tcCategories = Object.values(tcCategoryMap)
+    // 훈련 주간 달력 상태 저장 (카테고리 순서: 근로자 → 실업자 → 일반 → 과정평가형)
+    const tcCategories = Object.values(tcCategoryMap).sort((a, b) => {
+      const order = ['cat-근로자', 'cat-실업자', 'cat-일반', 'cat-과정평가형']
+      return (order.indexOf(a.id) ?? 99) - (order.indexOf(b.id) ?? 99)
+    })
+
     if (tcCategories.length > 0) {
-      const tcState = {
+      await supabase.from('training_calendar_state').upsert({
+        id: 1,
         categories: tcCategories,
         active_category: tcCategories[0]?.id ?? null,
         active_course_id: tcCategories[0]?.courses[0]?.id ?? null,
         expanded_months: [],
         updated_at: new Date().toISOString(),
         updated_by: user.email ?? user.id,
-      }
-      await supabase
-        .from('training_calendar_state')
-        .upsert({ id: 1, ...tcState }, { onConflict: 'id' })
+      }, { onConflict: 'id' })
     }
 
     return NextResponse.json({
@@ -485,7 +500,9 @@ export async function POST(request: NextRequest) {
       matched,
       unmatched,
       skipped,
+      calendarOnly,
       recordsSaved: allRecords.length,
+      calendarCourses: tcCategories.reduce((acc, c) => acc + c.courses.length, 0),
     })
   } catch (e) {
     console.error('folder-upload POST error:', e)
