@@ -1,10 +1,11 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
+import { Upload, CheckCircle } from 'lucide-react'
 
 const TYPE_LABEL: Record<string, string> = {
   EMPLOYED: '재직자', UNEMPLOYED: '실업자', NATIONAL: '국기',
@@ -59,6 +60,7 @@ interface AttendanceData {
     isWeekend: boolean
     lunchStart: string | null
     lunchEnd: string | null
+    hasExcelSchedule: boolean
   }
   dates: string[]
   rawDates: string[]
@@ -79,6 +81,9 @@ export default function AttendanceView() {
   const [loading, setLoading] = useState(false)
   const [listLoading, setListLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [uploading, setUploading] = useState(false)
+  const [uploadMsg, setUploadMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null)
+  const fileInputRef = useRef<HTMLInputElement>(null)
 
   // 과정 목록 로드
   useEffect(() => {
@@ -113,7 +118,33 @@ export default function AttendanceView() {
 
   const handleSelectCourse = (id: number) => {
     setSelectedCourse(id)
+    setUploadMsg(null)
     fetchAttendance(id)
+  }
+
+  const handleUpload = async (file: File) => {
+    if (!selectedCourse) return
+    setUploading(true)
+    setUploadMsg(null)
+    try {
+      const formData = new FormData()
+      formData.append('file', file)
+      formData.append('course_id', String(selectedCourse))
+      const res = await fetch('/api/schedule-upload', { method: 'POST', body: formData })
+      const data = await res.json()
+      if (!res.ok) {
+        setUploadMsg({ type: 'error', text: data.error || '업로드 실패' })
+      } else {
+        setUploadMsg({ type: 'success', text: data.message })
+        // 시간표 업로드 후 출석 데이터 재계산
+        fetchAttendance(selectedCourse)
+      }
+    } catch {
+      setUploadMsg({ type: 'error', text: '업로드 중 오류가 발생했습니다' })
+    } finally {
+      setUploading(false)
+      if (fileInputRef.current) fileInputRef.current.value = ''
+    }
   }
 
   const currentList = tab === 'ongoing' ? courses.ongoing : courses.ended
@@ -153,6 +184,51 @@ export default function AttendanceView() {
         </TabsContent>
       </Tabs>
 
+      {/* 엑셀 시간표 업로드 - 과정 선택 즉시 표시 */}
+      {selectedCourse && (
+        <Card>
+          <CardContent className="py-3 flex items-center justify-between gap-4">
+            <div className="flex items-center gap-2 text-sm text-muted-foreground">
+              {attendance?.course.hasExcelSchedule ? (
+                <span className="flex items-center gap-1 text-blue-600 font-medium">
+                  <CheckCircle className="w-4 h-4" />
+                  엑셀 시간표 적용중 — 실제 수업 시간 기준으로 계산됩니다
+                </span>
+              ) : (
+                <span>엑셀 시간표 미업로드 — DB 기본 시간 기준으로 계산됩니다</span>
+              )}
+            </div>
+            <div className="flex flex-col items-end gap-1 shrink-0">
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept=".xlsx,.xls"
+                className="hidden"
+                onChange={e => {
+                  const f = e.target.files?.[0]
+                  if (f) handleUpload(f)
+                }}
+              />
+              <Button
+                size="sm"
+                variant="outline"
+                className="flex items-center gap-1"
+                disabled={uploading}
+                onClick={() => fileInputRef.current?.click()}
+              >
+                <Upload className="w-4 h-4" />
+                {uploading ? '업로드 중...' : '엑셀 시간표 업로드'}
+              </Button>
+              {uploadMsg && (
+                <span className={`text-xs ${uploadMsg.type === 'success' ? 'text-blue-600' : 'text-red-500'}`}>
+                  {uploadMsg.text}
+                </span>
+              )}
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
       {/* 로딩 */}
       {loading && (
         <Card>
@@ -176,9 +252,15 @@ export default function AttendanceView() {
           {/* 과정 정보 + 요약 */}
           <Card>
             <CardHeader className="pb-3">
-              <CardTitle className="text-lg flex items-center gap-2">
+              <CardTitle className="text-lg flex items-center gap-2 flex-wrap">
                 {attendance.course.isWeekend && (
                   <Badge className="bg-red-100 text-red-700">주말반</Badge>
+                )}
+                {attendance.course.hasExcelSchedule && (
+                  <Badge className="bg-blue-100 text-blue-700 flex items-center gap-1">
+                    <CheckCircle className="w-3 h-3" />
+                    엑셀 시간표 적용중
+                  </Badge>
                 )}
                 [{attendance.course.courseCodeId}] {attendance.course.name} ({attendance.course.round}회차)
               </CardTitle>

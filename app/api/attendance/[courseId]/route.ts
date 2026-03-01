@@ -184,6 +184,27 @@ export async function GET(
 
     const targetMonths = getMonthList(startDate, effectiveEnd)
 
+    // 엑셀 업로드된 일별 시간표 조회 (있으면 우선 적용, 없으면 DB fallback)
+    const { data: dailySchedules } = await supabase
+      .from('course_daily_schedules')
+      .select('training_date, start_time, end_time, lunch_start, lunch_end')
+      .eq('course_id', courseId)
+
+    // Map<"YYYYMMDD", {start, end, lunchS, lunchE}>
+    const dailyScheduleMap: Record<string, { start: number; end: number; lunchS: number; lunchE: number }> = {}
+    if (dailySchedules) {
+      for (const ds of dailySchedules) {
+        const dateKey = ds.training_date.replace(/-/g, '')
+        dailyScheduleMap[dateKey] = {
+          start: parseTimeToMinutes(ds.start_time),
+          end: parseTimeToMinutes(ds.end_time),
+          lunchS: parseTimeToMinutes(ds.lunch_start || ''),
+          lunchE: parseTimeToMinutes(ds.lunch_end || ''),
+        }
+      }
+    }
+    const hasExcelSchedule = Object.keys(dailyScheduleMap).length > 0
+
     // 월별 데이터 fetch
     let allLogs: any[] = []
     const roundStr = String(course.round || 1)
@@ -246,13 +267,20 @@ export async function GET(
 
       for (const date of sortedDates) {
         // 날짜별 기준 시간 결정
+        // 우선순위: 1) 엑셀 업로드 시간표 2) schedule_change 특수일정 3) courses DB 기본값
         let dailyStartMin = DEFAULT_START_MIN
         let dailyEndMin = DEFAULT_END_MIN
         let dailyLunchS = DEFAULT_LUNCH_S
         let dailyLunchE = DEFAULT_LUNCH_E
 
-        // 특수일정 적용 (주말반)
-        if (exceptionMap[date]) {
+        if (dailyScheduleMap[date]) {
+          // 엑셀 업로드 시간표 적용
+          dailyStartMin = dailyScheduleMap[date].start
+          dailyEndMin = dailyScheduleMap[date].end
+          dailyLunchS = dailyScheduleMap[date].lunchS
+          dailyLunchE = dailyScheduleMap[date].lunchE
+        } else if (exceptionMap[date]) {
+          // 특수일정 적용 (주말반 schedule_change)
           dailyStartMin = exceptionMap[date].start
           dailyEndMin = exceptionMap[date].end
           if (exceptionMap[date].hasSpecialLunch) {
@@ -392,6 +420,7 @@ export async function GET(
         isWeekend,
         lunchStart: course.lunch_start,
         lunchEnd: course.lunch_end,
+        hasExcelSchedule,
       },
       dates: sortedDates.map(d => d.substring(4, 6) + '/' + d.substring(6, 8)),
       rawDates: sortedDates,
