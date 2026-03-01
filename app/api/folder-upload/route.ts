@@ -69,8 +69,10 @@ function minToHHMM(min: number): string {
 }
 
 // 파일명에서 개강일 추출: "20260221_과정명_강사.xlsx" → "2026-02-21"
+// file.name이 전체 경로를 반환하는 경우에도 대응 (split('/').pop())
 function getStartDateFromFilename(filename: string): string | null {
-  const m = filename.match(/^(\d{8})_/)
+  const name = filename.normalize('NFC').split('/').pop() || filename
+  const m = name.match(/^(\d{8})/)
   if (!m) return null
   const d = m[1]
   return `${d.slice(0, 4)}-${d.slice(4, 6)}-${d.slice(6, 8)}`
@@ -412,11 +414,14 @@ export async function POST(request: NextRequest) {
         continue
       }
 
-      // 과정 매칭: 개강일 + 강의장
-      const startDateFromName = getStartDateFromFilename(file.name)
+      // 과정 매칭: 개강일 + 강의장 (file.name이 경로를 포함할 수 있어 paths[i]도 시도)
+      const startDateFromName = getStartDateFromFilename(file.name) || getStartDateFromFilename(paths[i] || '')
       const roomBase = roomNumber.replace('호', '')
       let courseId: number | null = null
       let courseName = ''
+
+      // room_number는 DB에 "603" 또는 "603호" 형식 모두 가능
+      const roomFilter = `room_number.eq.${roomBase},room_number.like.${roomBase}호%`
 
       // 1차: 파일명 개강일 + 강의장
       if (startDateFromName) {
@@ -424,7 +429,7 @@ export async function POST(request: NextRequest) {
           .from('courses')
           .select('id, course_name')
           .eq('start_date', startDateFromName)
-          .like('room_number', `${roomBase}호%`)
+          .or(roomFilter)
           .limit(1)
 
         if (courses && courses.length > 0) {
@@ -442,7 +447,7 @@ export async function POST(request: NextRequest) {
             .select('id, course_name')
             .lte('start_date', firstDate)
             .gte('end_date', firstDate)
-            .like('room_number', `${roomBase}호%`)
+            .or(roomFilter)
             .limit(1)
 
           if (courses && courses.length > 0) {
