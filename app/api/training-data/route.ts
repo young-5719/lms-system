@@ -79,18 +79,16 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: error.message }, { status: 500 })
     }
 
-    // 근로자 카테고리 데이터를 course_daily_schedules에 동기화 (출석부용)
+    // 모든 카테고리를 순회하며 EMPLOYED 과정만 course_daily_schedules에 동기화
+    // (카테고리 이름이 아닌 DB type='EMPLOYED' 기준으로 필터)
     try {
       const cats: any[] = categories ?? []
-      const employedCat = cats.find((c: any) =>
-        c.name === '근로자' || c.name.includes('근로자') || c.name.includes('재직자')
-      )
 
       // 기존 스케줄 전체 삭제 후 현재 상태로 재구성
       await supabase.from('course_daily_schedules').delete().gt('course_id', 0)
 
-      if (employedCat) {
-        for (const course of employedCat.courses ?? []) {
+      for (const cat of cats) {
+        for (const course of cat.courses ?? []) {
           const dates = Object.keys(course.data ?? {}).sort()
           if (dates.length === 0) continue
 
@@ -102,13 +100,14 @@ export async function POST(request: NextRequest) {
 
           const firstDate = dates[0]
 
-          // DB에서 과정 매칭 (강의실 + 날짜 범위)
+          // DB에서 EMPLOYED 과정만 매칭 (강의실 + 날짜 범위)
           const { data: matchedCourses } = await supabase
             .from('courses')
             .select('id')
             .or(`room_number.eq.${roomBase},room_number.eq.${roomBase}호`)
             .lte('start_date', firstDate)
             .gte('end_date', firstDate)
+            .eq('type', 'EMPLOYED')
             .limit(1)
 
           if (!matchedCourses || matchedCourses.length === 0) continue
