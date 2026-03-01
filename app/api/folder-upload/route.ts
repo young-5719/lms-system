@@ -9,14 +9,19 @@ const FOLDER_TYPE_MAP: Record<string, string> = {
   '일반': 'GENERAL',
 }
 
+const FOLDER_CATEGORY_NAME: Record<string, string> = {
+  'EMPLOYED': '근로자',
+  'UNEMPLOYED': '실업자',
+  'GENERAL': '일반',
+}
+
 // webkitRelativePath에서 폴더 타입 추출
-// 예: "00. 신도림 전체 시간표/근로자/파일명.xlsx" → "EMPLOYED"
 function getFolderType(relativePath: string): string | null {
   const parts = relativePath.split('/')
   for (const part of parts) {
     if (FOLDER_TYPE_MAP[part]) return FOLDER_TYPE_MAP[part]
   }
-  return null // 과정평가형 등 → 스킵
+  return null
 }
 
 // "603호(2026)(실습겸용강의실)" → "603호"
@@ -62,7 +67,7 @@ function getStartDateFromFilename(filename: string): string | null {
   return `${d.slice(0, 4)}-${d.slice(4, 6)}-${d.slice(6, 8)}`
 }
 
-// xlsx rows → 날짜별 시간표
+// xlsx rows → 날짜별 시간표 (course_daily_schedules용)
 interface DaySchedule {
   start_time: string
   end_time: string
@@ -84,7 +89,6 @@ function parseScheduleFromRows(rows: unknown[][]): { schedules: Map<string, DayS
 
     if (!date) continue
 
-    // 강의장 번호 추출 (첫 번째 훈련 행에서)
     if (!roomNumber && type === '훈련' && location) {
       roomNumber = extractRoomNumber(location)
     }
@@ -125,6 +129,164 @@ function parseScheduleFromRows(rows: unknown[][]): { schedules: Map<string, DayS
   return { schedules, roomNumber }
 }
 
+// ─── Training Calendar Data Format ───────────────────────────────────────────
+
+interface TCSession {
+  start: string
+  end: string
+  room: string
+  courseName?: string
+  instructor?: string
+}
+
+interface TCDayData {
+  minStart: string
+  maxEnd: string
+  lunchStart: string
+  lunchEnd: string
+  subjects: string[]
+  ncsUnits: string[]
+  rooms: string[]
+  instructors: string[]
+  sessions: TCSession[]
+  isDiscretionary: boolean
+}
+
+interface TCCourseEntry {
+  id: string
+  fileName: string
+  data: Record<string, TCDayData>
+  weeks: string[][]
+  alerts: Record<string, string[]>
+}
+
+interface TCCategory {
+  id: string
+  name: string
+  courses: TCCourseEntry[]
+}
+
+function formatRoomTC(r: string): string {
+  const match = r.match(/\d+호/)
+  return match ? match[0] : r.replace(/\(.*$/, '').trim()
+}
+
+function generateWeeksTC(min: string, max: string): string[][] {
+  if (!min || !max || min === '9999-12-31') return []
+  const startDate = new Date(min + 'T00:00:00')
+  const endDate = new Date(max + 'T00:00:00')
+  const firstSunday = new Date(startDate)
+  firstSunday.setDate(startDate.getDate() - startDate.getDay())
+  const weekList: string[][] = []
+  const cur = new Date(firstSunday)
+  while (cur <= endDate || cur.getDay() !== 0) {
+    if (cur.getDay() === 0) weekList.push([])
+    const y = cur.getFullYear()
+    const m = String(cur.getMonth() + 1).padStart(2, '0')
+    const d = String(cur.getDate()).padStart(2, '0')
+    weekList[weekList.length - 1].push(`${y}-${m}-${d}`)
+    cur.setDate(cur.getDate() + 1)
+    if (cur > endDate && cur.getDay() === 0) break
+  }
+  return weekList
+}
+
+// 훈련 주간 달력 형식으로 파싱 (교과목, 강사, 강의실, 세션 포함)
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function processForTrainingCalendar(rawData: Record<string, any>[]): {
+  data: Record<string, TCDayData>
+  weeks: string[][]
+  alerts: Record<string, string[]>
+} {
+  const grouped: Record<string, TCDayData> = {}
+  const subjectDates: Record<string, { start: string; end: string }> = {}
+  let globalMin = '9999-12-31'
+  let globalMax = '0000-01-01'
+
+  for (const item of rawData) {
+    const dateKey = item['훈련일자'] || item['날짜'] || item['date'] || item['일자']
+    if (!dateKey) continue
+    const dateStr = parseExcelDate(dateKey)
+    if (!dateStr || dateStr.length < 10) continue
+
+    if (dateStr < globalMin) globalMin = dateStr
+    if (dateStr > globalMax) globalMax = dateStr
+
+    if (!grouped[dateStr]) {
+      grouped[dateStr] = {
+        minStart: '23:59', maxEnd: '00:00',
+        lunchStart: '13:00', lunchEnd: '14:00',
+        subjects: [], ncsUnits: [], rooms: [],
+        instructors: [], sessions: [], isDiscretionary: false,
+      }
+    }
+
+    const dayData = grouped[dateStr]
+    const type = String(item['구분'] || '').trim()
+    const currentStart = parseExcelTime(item['시작시간'])
+    const currentEnd = parseExcelTime(item['종료시간'])
+
+    if (type === '점심' && currentStart && currentEnd) {
+      dayData.lunchStart = currentStart
+      dayData.lunchEnd = currentEnd
+      continue
+    }
+
+    if (!currentStart || !currentEnd) continue
+
+    if (currentStart < dayData.minStart) dayData.minStart = currentStart
+    if (currentEnd > dayData.maxEnd) dayData.maxEnd = currentEnd
+
+    const sub = String(item['교과목'] || '').trim()
+    const ncs = String(item['NCS능력단위'] || '').trim()
+    const roomRaw = item['교육장소(강의실)'] || item['교육장소'] || item['강의장'] || item['강의실']
+    const room = roomRaw ? formatRoomTC(String(roomRaw)) : '-'
+    const instStr = String(item['훈련강사'] || item['강사'] || '').trim()
+
+    if (sub && !dayData.subjects.includes(sub)) dayData.subjects.push(sub)
+    if (ncs && !dayData.ncsUnits.includes(ncs)) dayData.ncsUnits.push(ncs)
+    if (room && room !== '-' && !dayData.rooms.includes(room)) dayData.rooms.push(room)
+
+    dayData.sessions.push({ start: currentStart, end: currentEnd, room, courseName: sub, instructor: instStr })
+
+    if (instStr) {
+      instStr.split(/[,/]/).forEach(n => {
+        const t = n.trim()
+        if (t && !dayData.instructors.includes(t)) dayData.instructors.push(t)
+      })
+    }
+
+    if (sub.includes('재량')) dayData.isDiscretionary = true
+
+    if (sub) {
+      if (!subjectDates[sub]) subjectDates[sub] = { start: dateStr, end: dateStr }
+      if (dateStr < subjectDates[sub].start) subjectDates[sub].start = dateStr
+      if (dateStr > subjectDates[sub].end) subjectDates[sub].end = dateStr
+    }
+  }
+
+  const alerts: Record<string, string[]> = {}
+  const addAlert = (d: string, t: string) => {
+    if (!alerts[d]) alerts[d] = []
+    if (!alerts[d].includes(t)) alerts[d].push(t)
+  }
+
+  if (globalMin !== '9999-12-31') {
+    addAlert(globalMin, '🚀 개강일')
+    addAlert(globalMax, '🏁 종강일')
+    Object.entries(subjectDates).forEach(([name, r]) => {
+      addAlert(r.start, `📖 [시작] ${name}`)
+      addAlert(r.end, `📘 [종료] ${name}`)
+    })
+  }
+
+  Object.entries(grouped).forEach(([date, day]) => {
+    if (day.instructors.length > 1) addAlert(date, '👤 강사 변경')
+  })
+
+  return { data: grouped, weeks: generateWeeksTC(globalMin, globalMax), alerts }
+}
+
 export async function DELETE() {
   try {
     const supabase = await createClient()
@@ -133,6 +295,17 @@ export async function DELETE() {
 
     const { error } = await supabase.from('course_daily_schedules').delete().neq('id', '00000000-0000-0000-0000-000000000000')
     if (error) throw error
+
+    // 훈련 주간 달력 상태도 초기화
+    await supabase.from('training_calendar_state').upsert({
+      id: 1,
+      categories: [],
+      active_category: null,
+      active_course_id: null,
+      expanded_months: [],
+      updated_at: new Date().toISOString(),
+      updated_by: user.email ?? user.id,
+    }, { onConflict: 'id' })
 
     return NextResponse.json({ success: true, message: '모든 시간표 데이터가 삭제되었습니다' })
   } catch (e) {
@@ -158,6 +331,9 @@ export async function POST(request: NextRequest) {
     const skipped: { filename: string; reason: string }[] = []
     const allRecords: object[] = []
 
+    // 훈련 주간 달력용 카테고리 맵
+    const tcCategoryMap: Record<string, TCCategory> = {}
+
     for (let i = 0; i < files.length; i++) {
       const file = files[i]
       const path = paths[i] || file.name
@@ -169,25 +345,50 @@ export async function POST(request: NextRequest) {
         continue
       }
 
-      // 파일명에서 개강일 추출
       const startDateFromName = getStartDateFromFilename(file.name)
 
-      // xlsx 파싱
+      // xlsx 한 번 읽기 → 두 가지 형식으로 파싱
       let schedules: Map<string, DaySchedule>
       let roomNumber: string
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      let jsonData: Record<string, any>[]
       try {
         const buf = await file.arrayBuffer()
         const wb = XLSX.read(new Uint8Array(buf), { type: 'array' })
         const ws = wb.Sheets[wb.SheetNames[0]]
+
+        // 배열 형식 (course_daily_schedules용)
         const rows = XLSX.utils.sheet_to_json<unknown[]>(ws, { header: 1, defval: '' }).slice(1) as unknown[][]
         const parsed = parseScheduleFromRows(rows)
         schedules = parsed.schedules
         roomNumber = parsed.roomNumber
+
+        // 키 형식 (훈련 주간 달력용)
+        jsonData = XLSX.utils.sheet_to_json(ws) as Record<string, any>[]
       } catch {
         unmatched.push({ filename: file.name, reason: 'xlsx 파싱 실패' })
         continue
       }
 
+      // 훈련 주간 달력 데이터 생성 (과정 매칭 여부와 무관하게 처리)
+      const { data: tcData, weeks: tcWeeks, alerts: tcAlerts } = processForTrainingCalendar(jsonData)
+      if (Object.keys(tcData).length > 0) {
+        const catName = FOLDER_CATEGORY_NAME[folderType] || folderType
+        const catId = `cat-${catName}`
+        if (!tcCategoryMap[catId]) {
+          tcCategoryMap[catId] = { id: catId, name: catName, courses: [] }
+        }
+        const courseId = `course-${file.name.replace(/\.(xlsx|xls)$/i, '').replace(/[^a-zA-Z0-9가-힣_-]/g, '_')}`
+        const existingIdx = tcCategoryMap[catId].courses.findIndex(c => c.fileName === file.name)
+        const entry: TCCourseEntry = { id: courseId, fileName: file.name, data: tcData, weeks: tcWeeks, alerts: tcAlerts }
+        if (existingIdx >= 0) {
+          tcCategoryMap[catId].courses[existingIdx] = entry
+        } else {
+          tcCategoryMap[catId].courses.push(entry)
+        }
+      }
+
+      // course_daily_schedules용: 데이터 없으면 스킵
       if (schedules.size === 0 || !roomNumber) {
         unmatched.push({ filename: file.name, reason: '시간표 데이터 없음' })
         continue
@@ -254,12 +455,28 @@ export async function POST(request: NextRequest) {
       matched.push({ filename: file.name, courseName, folderType, days: schedules.size })
     }
 
-    // 일괄 upsert
+    // course_daily_schedules 일괄 upsert
     if (allRecords.length > 0) {
       const { error } = await supabase
         .from('course_daily_schedules')
         .upsert(allRecords, { onConflict: 'course_id,training_date' })
       if (error) throw error
+    }
+
+    // 훈련 주간 달력 상태 저장
+    const tcCategories = Object.values(tcCategoryMap)
+    if (tcCategories.length > 0) {
+      const tcState = {
+        categories: tcCategories,
+        active_category: tcCategories[0]?.id ?? null,
+        active_course_id: tcCategories[0]?.courses[0]?.id ?? null,
+        expanded_months: [],
+        updated_at: new Date().toISOString(),
+        updated_by: user.email ?? user.id,
+      }
+      await supabase
+        .from('training_calendar_state')
+        .upsert({ id: 1, ...tcState }, { onConflict: 'id' })
     }
 
     return NextResponse.json({
