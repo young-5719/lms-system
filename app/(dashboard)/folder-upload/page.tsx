@@ -46,8 +46,12 @@ interface UploadResult {
 function getFolderType(relativePath: string): string | null {
   const parts = relativePath.split('/')
   for (const part of parts) {
+    // 정확한 매칭 우선
     if (FOLDER_TYPE_MAP[part]) return FOLDER_TYPE_MAP[part]
+    // 부분 문자열 매칭 (폴더명 변형 대응)
     if (part.includes('과정평가형') || part.includes('과평')) return 'ASSESSMENT'
+    if (part.includes('근로자') || part.includes('재직자')) return 'EMPLOYED'
+    if (part.includes('실업자')) return 'UNEMPLOYED'
   }
   return null
 }
@@ -57,6 +61,8 @@ function getFolderName(relativePath: string): string {
   for (const part of parts) {
     if (FOLDER_TYPE_MAP[part]) return part
     if (part.includes('과정평가형') || part.includes('과평')) return '과정평가형'
+    if (part.includes('근로자') || part.includes('재직자')) return '근로자'
+    if (part.includes('실업자')) return '실업자'
   }
   return parts[parts.length - 2] || '기타'
 }
@@ -240,6 +246,9 @@ export default function FolderUploadPage() {
                     <Badge className="text-[10px] bg-orange-100 text-orange-600">미인식</Badge>
                   )}
                   <span className="text-muted-foreground truncate">{df.file.name}</span>
+                  {!df.folderType && (
+                    <span className="text-[10px] text-orange-400 truncate ml-1">{df.path}</span>
+                  )}
                 </div>
               ))}
             </div>

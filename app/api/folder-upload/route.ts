@@ -14,6 +14,9 @@ function getFolderType(relativePath: string): string | null {
   const parts = relativePath.split('/')
   for (const part of parts) {
     if (FOLDER_TYPE_MAP[part]) return FOLDER_TYPE_MAP[part]
+    // 부분 문자열 매칭 (폴더명 변형 대응)
+    if (part.includes('근로자') || part.includes('재직자')) return 'EMPLOYED'
+    if (part.includes('실업자')) return 'UNEMPLOYED'
   }
   return null
 }
@@ -22,8 +25,10 @@ function getFolderType(relativePath: string): string | null {
 function getTCCategoryName(relativePath: string): string | null {
   const parts = relativePath.split('/')
   for (const part of parts) {
-    if (FOLDER_TYPE_MAP[part]) return part               // 근로자, 실업자, 일반
+    if (FOLDER_TYPE_MAP[part]) return part               // 근로자, 실업자, 일반 (정확 매칭)
     if (part.includes('과정평가형') || part.includes('과평')) return '과정평가형'
+    if (part.includes('근로자') || part.includes('재직자')) return '근로자'
+    if (part.includes('실업자')) return '실업자'
   }
   return null
 }
