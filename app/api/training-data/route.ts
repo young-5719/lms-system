@@ -1,6 +1,30 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 
+// 훈련 달력 + 출석부 연동 데이터 전체 초기화
+export async function DELETE() {
+  try {
+    const supabase = await createClient()
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+
+    await supabase.from('course_daily_schedules').delete().gt('course_id', 0)
+    await supabase.from('training_calendar_state').update({
+      categories: [],
+      active_category: null,
+      active_course_id: null,
+      expanded_months: [],
+      updated_at: new Date().toISOString(),
+      updated_by: user.email ?? user.id,
+    }).eq('id', 1)
+
+    return NextResponse.json({ ok: true })
+  } catch (error) {
+    console.error('training-data DELETE error:', error)
+    return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 })
+  }
+}
+
 // 공유 훈련 달력 데이터 조회 (전체 사용자 공유)
 export async function GET() {
   try {

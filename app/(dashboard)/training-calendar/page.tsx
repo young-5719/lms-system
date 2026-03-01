@@ -5,7 +5,7 @@ import * as XLSX from 'xlsx'
 import {
   Calendar, Upload, Clock, User, MapPin, BookOpen,
   FileText, Bell, Table2, X, LayoutGrid, ChevronDown, FolderOpen,
-  ChevronLeft, ChevronRight, AlertTriangle
+  ChevronLeft, ChevronRight, AlertTriangle, Trash2
 } from 'lucide-react'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -893,6 +893,19 @@ export default function TrainingCalendarPage() {
     }
   }
 
+  // ── 전체 초기화 ───────────────────────────────────────────────────────────────
+  const handleReset = async () => {
+    if (!confirm('모든 폴더 데이터를 초기화하시겠습니까?\n업로드된 시간표와 출석부 연동 데이터가 모두 삭제됩니다.')) return
+    setCategories([])
+    setActiveCategory(null)
+    setActiveCourseId(null)
+    setExpandedMonths(new Set())
+    setModalDate(null)
+    try { localStorage.removeItem('lms-training-data') } catch { /* no-op */ }
+    try { localStorage.removeItem('lms-course-summaries') } catch { /* no-op */ }
+    try { await fetch('/api/training-data', { method: 'DELETE' }) } catch { /* no-op */ }
+  }
+
   // ── Room matrix ───────────────────────────────────────────────────────────────
   const computeRoomMatrix = (dateStr: string) => {
     // Attach parsed subject + fileName + notices to each session for display in modal
@@ -1350,6 +1363,13 @@ export default function TrainingCalendarPage() {
             </p>
           </div>
           <div className="flex flex-wrap gap-3">
+            <button
+              onClick={handleReset}
+              className="flex items-center gap-2 px-6 py-4 bg-red-600 text-white rounded-2xl font-bold hover:bg-red-700 transition-all shadow-lg"
+            >
+              <Trash2 className="w-5 h-5" />
+              데이터 초기화
+            </button>
             <button
               onClick={handleDownloadPdf}
               disabled={!hasCalendar || isGenerating}
