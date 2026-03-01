@@ -11,7 +11,7 @@ const FOLDER_TYPE_MAP: Record<string, string> = {
 
 // webkitRelativePath에서 출석부용 폴더 타입 추출 (근로자/실업자/일반만)
 function getFolderType(relativePath: string): string | null {
-  const parts = relativePath.split('/')
+  const parts = relativePath.normalize('NFC').split('/')
   for (const part of parts) {
     if (FOLDER_TYPE_MAP[part]) return FOLDER_TYPE_MAP[part]
     // 부분 문자열 매칭 (폴더명 변형 대응)
@@ -23,7 +23,7 @@ function getFolderType(relativePath: string): string | null {
 
 // 훈련 주간 달력용 카테고리명 추출 (과정평가형 포함 전체)
 function getTCCategoryName(relativePath: string): string | null {
-  const parts = relativePath.split('/')
+  const parts = relativePath.normalize('NFC').split('/')
   for (const part of parts) {
     if (FOLDER_TYPE_MAP[part]) return part               // 근로자, 실업자, 일반 (정확 매칭)
     if (part.includes('과정평가형') || part.includes('과평')) return '과정평가형'

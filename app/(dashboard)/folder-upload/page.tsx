@@ -44,7 +44,7 @@ interface UploadResult {
 }
 
 function getFolderType(relativePath: string): string | null {
-  const parts = relativePath.split('/')
+  const parts = relativePath.normalize('NFC').split('/')
   for (const part of parts) {
     // 정확한 매칭 우선
     if (FOLDER_TYPE_MAP[part]) return FOLDER_TYPE_MAP[part]
@@ -57,7 +57,7 @@ function getFolderType(relativePath: string): string | null {
 }
 
 function getFolderName(relativePath: string): string {
-  const parts = relativePath.split('/')
+  const parts = relativePath.normalize('NFC').split('/')
   for (const part of parts) {
     if (FOLDER_TYPE_MAP[part]) return part
     if (part.includes('과정평가형') || part.includes('과평')) return '과정평가형'
