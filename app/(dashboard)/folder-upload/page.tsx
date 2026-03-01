@@ -190,10 +190,10 @@ export default function FolderUploadPage() {
           type="file"
           accept=".xlsx,.xls"
           multiple
-          // @ts-ignore
-          webkitdirectory=""
           className="hidden"
           onChange={handleFolderSelect}
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          {...({ webkitdirectory: '', directory: '' } as any)}
         />
         <Button
           onClick={() => fileInputRef.current?.click()}
