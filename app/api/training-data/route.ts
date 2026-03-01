@@ -55,6 +55,65 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: error.message }, { status: 500 })
     }
 
+    // 근로자 카테고리 데이터를 course_daily_schedules에 동기화 (출석부용)
+    try {
+      const cats: any[] = categories ?? []
+      const employedCat = cats.find((c: any) =>
+        c.name === '근로자' || c.name.includes('근로자') || c.name.includes('재직자')
+      )
+
+      // 기존 스케줄 전체 삭제 후 현재 상태로 재구성
+      await supabase.from('course_daily_schedules').delete().gt('course_id', 0)
+
+      if (employedCat) {
+        for (const course of employedCat.courses ?? []) {
+          const dates = Object.keys(course.data ?? {}).sort()
+          if (dates.length === 0) continue
+
+          // 첫 번째 날짜에서 강의실 추출
+          const firstDateData = course.data[dates[0]]
+          const roomRaw: string = firstDateData?.rooms?.[0] ?? ''
+          const roomBase = roomRaw.replace(/호$/, '').trim()
+          if (!roomBase) continue
+
+          const firstDate = dates[0]
+
+          // DB에서 과정 매칭 (강의실 + 날짜 범위)
+          const { data: matchedCourses } = await supabase
+            .from('courses')
+            .select('id')
+            .or(`room_number.eq.${roomBase},room_number.eq.${roomBase}호`)
+            .lte('start_date', firstDate)
+            .gte('end_date', firstDate)
+            .limit(1)
+
+          if (!matchedCourses || matchedCourses.length === 0) continue
+
+          const courseId = matchedCourses[0].id
+
+          // 날짜별 스케줄 삽입
+          const records = dates.map((date: string) => {
+            const d = course.data[date]
+            return {
+              course_id: courseId,
+              training_date: date,
+              start_time: d?.minStart || null,
+              end_time: d?.maxEnd || null,
+              lunch_start: d?.lunchStart || null,
+              lunch_end: d?.lunchEnd || null,
+            }
+          })
+
+          if (records.length > 0) {
+            await supabase.from('course_daily_schedules').insert(records)
+          }
+        }
+      }
+    } catch (syncErr) {
+      console.error('course_daily_schedules sync error:', syncErr)
+      // 달력 저장은 성공으로 처리
+    }
+
     return NextResponse.json({ ok: true })
   } catch (error) {
     console.error('training-data POST error:', error)
