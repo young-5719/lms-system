@@ -700,7 +700,7 @@ export default function WeeklyCalendar() {
                     {unemployedNotices.slice(0, 3).map((n, i) => (
                       <span
                         key={`u-${i}`}
-                        className="text-[10px] font-black text-blue-900 leading-tight truncate bg-blue-50 rounded px-0.5"
+                        className="text-[11px] font-bold text-blue-800 leading-tight truncate bg-blue-100 rounded px-1 border border-blue-300"
                       >
                         {n}
                       </span>
