@@ -700,7 +700,20 @@ export default function WeeklyCalendar() {
                     {unemployedNotices.slice(0, 3).map((n, i) => (
                       <span
                         key={`u-${i}`}
-                        className="text-[11px] font-bold text-blue-800 leading-tight truncate bg-blue-100 rounded px-1 border border-blue-300"
+                        style={{
+                          fontSize: '11px',
+                          fontWeight: 700,
+                          color: '#1e40af',
+                          backgroundColor: '#dbeafe',
+                          border: '1px solid #93c5fd',
+                          borderRadius: '4px',
+                          padding: '0 4px',
+                          display: 'block',
+                          overflow: 'hidden',
+                          textOverflow: 'ellipsis',
+                          whiteSpace: 'nowrap',
+                          lineHeight: '1.4',
+                        }}
                       >
                         {n}
                       </span>
@@ -708,7 +721,15 @@ export default function WeeklyCalendar() {
                     {employedNotices.slice(0, 2).map((n, i) => (
                       <span
                         key={`e-${i}`}
-                        className="text-[9px] text-slate-400 leading-tight truncate"
+                        style={{
+                          fontSize: '9px',
+                          color: '#94a3b8',
+                          display: 'block',
+                          overflow: 'hidden',
+                          textOverflow: 'ellipsis',
+                          whiteSpace: 'nowrap',
+                          lineHeight: '1.25',
+                        }}
                       >
                         {n}
                       </span>
