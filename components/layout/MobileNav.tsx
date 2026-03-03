@@ -4,7 +4,7 @@ import { useState } from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import {
-  Menu, X, LayoutDashboard, BookOpen, ClipboardList,
+  Menu, X, LayoutDashboard,
   CalendarDays, BarChart3, Search,
   FileText, TrendingUp, UserPlus, ChevronRight, Briefcase,
   Calendar, CheckSquare, Clock,
@@ -19,8 +19,6 @@ const NAV_SECTIONS = [
   {
     label: '학사 관리',
     items: [
-      { href: '/courses', label: '과정 관리', icon: BookOpen },
-      { href: '/attendance', label: '출석부', icon: ClipboardList },
       { href: '/waitlist', label: '차기 개강 대기자', icon: UserPlus },
       { href: '/rollover-survey', label: '이월희망조사표', icon: FileText },
     ],

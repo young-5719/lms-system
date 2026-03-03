@@ -1018,11 +1018,11 @@ export default function TrainingCalendarPage() {
 
         {hasAnyNotice ? (
           <div className="flex flex-col gap-0.5 flex-1 overflow-hidden">
-            {/* 실업자 특이사항 — 먼저, 보통 크기 */}
+            {/* 실업자 특이사항 — 먼저, 굵게 강조 */}
             {unemployedNotices.map((n, i) => (
               <span
                 key={`u-${i}`}
-                className="text-[10px] font-semibold text-slate-700 leading-tight truncate"
+                className="text-[10px] font-black text-blue-900 leading-tight truncate bg-blue-50 rounded px-0.5"
               >
                 {n}
               </span>
